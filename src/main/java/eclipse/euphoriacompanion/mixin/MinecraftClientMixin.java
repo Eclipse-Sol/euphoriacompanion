@@ -21,7 +21,6 @@ public class MinecraftClientMixin {
         if (client.player != null && client.currentScreen == null && !paused && EuphoriaCompanion.ANALYZE_KEY != null) {
             // Check if our key was pressed
             if (EuphoriaCompanion.ANALYZE_KEY.wasPressed()) {
-                EuphoriaCompanion.LOGGER.info("Analyze key pressed, processing shader packs");
                 EuphoriaCompanion.processShaderPacks();
             }
         }

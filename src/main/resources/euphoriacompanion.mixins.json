@@ -4,7 +4,6 @@
   "package": "eclipse.euphoriacompanion.mixin",
   "compatibilityLevel": "JAVA_8",
   "mixins": [
-    "RegistryFreezerMixin"
   ],
   "client": [
     "MinecraftClientMixin"
