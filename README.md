@@ -1,21 +1,22 @@
-# Euphoria Companion Mod
+# Euphoria Companion
 
-A Minecraft Fabric mod designed to assist in analyzing and comparing shaderpack block configurations against the actual blocks present in the game. This tool helps identify mismatches, unused shader blocks, and missing shader entries for modded blocks.
+New 2.0.0 rewrite of the mod, should be a *lot* faster and more reliable.
 
 ## Features
 
 - **Shaderpack Analysis**: Scans `.zip` or directory-based shaderpacks for `block.properties` files.
 - **Block Comparison**:
-  - Compares blocks registered in-game (including modded blocks) with those defined in shaderpacks.
-  - Identifies:
-    - Blocks missing from shaderpacks (useful for ensuring shader compatibility with mods).
-    - Unused blocks in shaderpacks (reduces unnecessary shader processing). # Will be useful for Optifine because it nukes the log with warnings
-- **Automated Reporting**:
-  - Generates detailed logs in `logs/block_comparison_[shaderpack].txt`.
-  - Organizes blocks by mod for easier troubleshooting.
-  - Provides summary statistics (total blocks, missing counts, etc.).
-- **Cross-Version Support**: Works with Minecraft 1.16+.
-- **Key Binding**: Includes a client-side keybind (`F6`) for potential manual triggering.
+  - Compares blocks registered in-game with those defined in shaderpacks.
+  - Lets you know if some some reason the render layers are not properly matching due to mods interferance.
+
+- **Entity Listing**:
+  - You can now find a list of entities within the game within `logs/euphoriacompanion`.
+
+## Usage
+
+1. Launch the game with the mod installed.
+2. Press `F6` to process block.properties again. (Rebindable)
+3. Check the `logs/euphoriacompanion` folder for generated reports.
 
 ## How It Works
 
@@ -30,32 +31,12 @@ A Minecraft Fabric mod designed to assist in analyzing and comparing shaderpack 
    - Compares in-game blocks with shader-defined blocks.
    - Detects:
      - Blocks present in-game but missing from the shaderpack.
-     - Blocks defined in the shaderpack but not present in the game.
 
 4. **Reporting**:
-   - Writes a categorized report to `logs/block_comparison_[shaderpack].txt`, including:
-     - Summary statistics.
-     - Missing blocks grouped by mod.
-     - Full block lists for debugging.
+   - Writes a categorized report to `logs/euphoriacompanion/[shaderpack_name].txt`.
 
 ## Installation
 
-1. **Requires Fabric Loader** and **Fabric API**.
+1. **Requires Fabric Loader** and **Fabric API**. You can also you Sinytra Connector for 1.20.1 and 1.21.1.
 2. Place the mod JAR in your `mods` folder.
 
-## Usage
-
-1. Launch the game with the mod installed.
-2. The mod automatically scans shaderpacks on startup. (Only on Modern)
-3. Press `F6` to process block.properties again. (Rebindable)
-4. Check the `logs` folder for generated reports.
-
-## For Shaderpack Authors
-
-Use the generated logs to:
-- Ensure compatibility with popular mods by adding missing block entries.
-
-## Technical Notes
-
-- **Supported Minecraft Versions**: 1.16 to 1.19.2 (via legacy registry handling) and 1.19.3+ (via modern registry handling)
-- **Log Format**: Reports are human-readable and sorted alphabetically by mod ID.
