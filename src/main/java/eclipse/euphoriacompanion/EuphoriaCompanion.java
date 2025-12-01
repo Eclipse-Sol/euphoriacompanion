@@ -57,11 +57,13 @@ public class EuphoriaCompanion implements ModInitializer {
 
         try {
             // Register the keybinding using Fabric API
+            // In 1.21+, KeyBinding uses Category that requires an Identifier
             ANALYZE_KEY = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.euphoriacompanion.analyze",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_F6,
-                "category.euphoriacompanion.keys"));
+                net.minecraft.client.option.KeyBinding.Category.create(
+                    net.minecraft.util.Identifier.of("euphoriacompanion", "keys"))));
         } catch (Exception e) {
             LOGGER.error("Failed to register keybinding", e);
         }

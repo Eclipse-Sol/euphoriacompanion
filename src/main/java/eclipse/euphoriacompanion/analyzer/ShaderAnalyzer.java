@@ -6,6 +6,8 @@ import eclipse.euphoriacompanion.parser.BlockPropertiesParser;
 import eclipse.euphoriacompanion.report.AnalysisReport;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
+import net.minecraft.client.render.BlockRenderLayer;
+import net.minecraft.client.render.BlockRenderLayers;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
@@ -359,7 +361,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
         BlockState defaultState = block.getDefaultState();
 
         // Check categories in priority order based on config
-        // Block Entity is highest priority since it may require special shader handling
+        // Block Entity is the highest priority since it may require special shader handling
         if (config.checkBlockEntity && block instanceof net.minecraft.block.BlockEntityProvider) {
             return "Block Entity";
         } else if (config.checkLightEmitting && defaultState.getLuminance() > 0) {
@@ -401,7 +403,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
             if (config.checkNonFull && isNonFull(state)) {
                 anyNonFull = true;
             }
-            if (!state.isOpaqueFullCube(null, null)) {
+            if (!state.isOpaqueFullCube()) {
                 allFull = false;
             }
         }
@@ -425,10 +427,9 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
      */
     private boolean isTranslucent(BlockState state) {
         try {
-            // Use Minecraft's actual render layer determination
-            net.minecraft.client.render.RenderLayer renderLayer =
-                net.minecraft.client.render.RenderLayers.getBlockLayer(state);
-            return renderLayer == net.minecraft.client.render.RenderLayer.getTranslucent();
+            BlockRenderLayer renderLayer = BlockRenderLayers.getBlockLayer(state);
+            // Both TRANSLUCENT and TRIPWIRE are treated as translucent by shaders
+            return renderLayer == BlockRenderLayer.TRANSLUCENT || renderLayer == BlockRenderLayer.TRIPWIRE;
         } catch (Exception e) {
             return false;
         }
@@ -440,7 +441,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
     private boolean isNonFull(BlockState state) {
         try {
             // Check if light can leak through any side
-            return !state.isOpaqueFullCube(null, null);
+            return !state.isOpaqueFullCube();
         } catch (Exception e) {
             return false;
         }
@@ -483,7 +484,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
                 return null;
             }
 
-            // Check if the block is actually registered (not just returning AIR as fallback)
+            // Check if the block is actually registered
             if (!Registries.BLOCK.containsId(id)) {
                 return null; // Block doesn't exist in registry
             }
@@ -496,22 +497,16 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
                 return null;
             }
 
-            // Use Minecraft's actual render layer API
-            net.minecraft.client.render.RenderLayer renderLayer =
-                net.minecraft.client.render.RenderLayers.getBlockLayer(state);
+            BlockRenderLayer renderLayer = BlockRenderLayers.getBlockLayer(state);
 
-            // Map Minecraft's render layers to shader layer names
-            if (renderLayer == net.minecraft.client.render.RenderLayer.getSolid()) {
-                return "solid";
-            } else if (renderLayer == net.minecraft.client.render.RenderLayer.getCutout()) {
-                return "cutout";
-            } else if (renderLayer == net.minecraft.client.render.RenderLayer.getCutoutMipped()) {
-                return "cutout_mipped";
-            } else if (renderLayer == net.minecraft.client.render.RenderLayer.getTranslucent()) {
-                return "translucent";
-            }
-
-            return null;
+            // Map BlockRenderLayer enum to shader layer names
+            // Note: In 1.21.11+, CUTOUT_MIPPED was merged into CUTOUT
+            return switch (renderLayer) {
+                case SOLID -> "solid";
+                case CUTOUT -> "cutout";
+                case TRANSLUCENT -> "translucent";
+                case TRIPWIRE -> "translucent"; // Shaders treat tripwire as translucent
+            };
 
         } catch (Exception e) {
             EuphoriaCompanion.LOGGER.error("Failed to get render layer for: {}", blockId, e);

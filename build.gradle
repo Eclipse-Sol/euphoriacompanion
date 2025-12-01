@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.4-SNAPSHOT'
+	id 'fabric-loom' version '1.13-SNAPSHOT'
 	id 'maven-publish'
 }
 
@@ -50,13 +50,13 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-	// For Minecraft 1.19.3+ we need to use Java 17
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
-	
-	// Make sure to use the proper option format for Java 17
+	// For Minecraft 1.21+ we need to use Java 21
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+
+	// Make sure to use the proper option format for Java 21
 	if (JavaVersion.current().isJava9Compatible()) {
-		it.options.release = 17
+		it.options.release = 21
 	}
 	
 	// Add these options to help with compatibility issues
