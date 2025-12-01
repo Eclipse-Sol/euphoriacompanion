@@ -358,8 +358,11 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
     private String categorizeBlockQuick(Block block) {
         BlockState defaultState = block.getDefaultState();
 
-        // Check categories in order based on config
-        if (config.checkLightEmitting && defaultState.getLuminance() > 0) {
+        // Check categories in priority order based on config
+        // Block Entity is highest priority since it may require special shader handling
+        if (config.checkBlockEntity && block instanceof net.minecraft.block.BlockEntityProvider) {
+            return "Block Entity";
+        } else if (config.checkLightEmitting && defaultState.getLuminance() > 0) {
             return "Light Emitting";
         } else if (config.checkTranslucent && isTranslucent(defaultState)) {
             return "Translucent";
@@ -377,6 +380,11 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
      * Catches cases like redstone lamps that only emit light when lit=true
      */
     private String categorizeBlockDeep(Block block) {
+        // Block Entity check first (same as quick scan - highest priority)
+        if (config.checkBlockEntity && block instanceof net.minecraft.block.BlockEntityProvider) {
+            return "Block Entity";
+        }
+
         boolean anyLightEmitting = false;
         boolean anyTranslucent = false;
         boolean anyNonFull = false;

@@ -25,6 +25,7 @@ public class ModConfig {
     public boolean checkTranslucent = true;
     public boolean checkNonFull = true;
     public boolean checkFull = true;
+    public boolean checkBlockEntity = true;
     public boolean generateEntityList = true;
 
     // Cached detection results
@@ -152,6 +153,7 @@ public class ModConfig {
         checkTranslucent = Boolean.parseBoolean(props.getProperty("checkTranslucent", "true"));
         checkNonFull = Boolean.parseBoolean(props.getProperty("checkNonFull", "true"));
         checkFull = Boolean.parseBoolean(props.getProperty("checkFull", "true"));
+        checkBlockEntity = Boolean.parseBoolean(props.getProperty("checkBlockEntity", "true"));
         generateEntityList = Boolean.parseBoolean(props.getProperty("generateEntityList", "false"));
     }
 
@@ -177,10 +179,12 @@ public class ModConfig {
                 props.setProperty("tagSupport", tagSupport.name());
 
                 writer.write("\n# Validation and categorization options\n");
+                writer.write("# Note: Block entities may not all use entity rendering (gbuffers_entities)\n");
                 props.setProperty("checkLightEmitting", String.valueOf(checkLightEmitting));
                 props.setProperty("checkTranslucent", String.valueOf(checkTranslucent));
                 props.setProperty("checkNonFull", String.valueOf(checkNonFull));
                 props.setProperty("checkFull", String.valueOf(checkFull));
+                props.setProperty("checkBlockEntity", String.valueOf(checkBlockEntity));
                 props.setProperty("validateRenderLayers", String.valueOf(validateRenderLayers));
 
                 writer.write("\n# Generate entity list file\n");
