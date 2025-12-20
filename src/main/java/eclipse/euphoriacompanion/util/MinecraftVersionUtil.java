@@ -11,7 +11,7 @@ public class MinecraftVersionUtil {
 
     /**
      * Gets the current Minecraft version as an integer.
-     * Example: "1.21.1" -> 12101, "1.20.1" -> 12001, "1.7.10" -> 10710
+     * Example: "1.21.1" -> 12101, "26.1" -> 260100, "1.20.1" -> 12001, "1.7.10" -> 10710
      */
     public static int getCurrentMCVersionAsInt() {
         try {
@@ -31,7 +31,7 @@ public class MinecraftVersionUtil {
 
     /**
      * Parses a version string to an integer.
-     * Example: "1.21.1" -> 12101, "1.20.1" -> 12001
+     * Example: "1.21.1" -> 12101, "26.1" -> 260100, "1.20.1" -> 12001
      * Snapshots (e.g., "24w14a") are treated as the latest version.
      * Throws RuntimeException if version cannot be parsed.
      */
@@ -42,7 +42,7 @@ public class MinecraftVersionUtil {
             return Integer.MAX_VALUE; // Treat as latest/newest version
         }
 
-        // Remove any extra parts (e.g., "1.21.1-pre1" -> "1.21.1")
+        // Remove any extra parts (e.g., "1.21.1-pre1" -> "1.21.1", "26.1-snapshot-1" -> "26.1")
         String[] mainParts = version.split("-")[0].split("\\+")[0].split("\\.");
 
         if (mainParts.length < 2) {
@@ -54,8 +54,9 @@ public class MinecraftVersionUtil {
             int minor = Integer.parseInt(mainParts[1]);
             int patch = mainParts.length >= 3 ? Integer.parseInt(mainParts[2]) : 0;
 
-            // Format: ABBCC where A=major, BB=minor (padded), CC=patch (padded)
-            // Examples: 1.21.1 -> 12101, 1.20.1 -> 12001, 1.7.10 -> 10710
+            // Format: (major * 10000) + (minor * 100) + patch
+            // Examples: 1.21.1 -> 12101, 26.1 -> 260100, 1.20.1 -> 12001, 1.7.10 -> 10710
+            // This supports any number of digits in major version (1-99+)
             return major * 10000 + minor * 100 + patch;
 
         } catch (NumberFormatException e) {

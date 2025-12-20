@@ -1,11 +1,11 @@
 package eclipse.euphoriacompanion.analyzer;
 
 import eclipse.euphoriacompanion.EuphoriaCompanion;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.Registries;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.resources.Identifier;
 
 import java.util.*;
 
@@ -85,12 +85,12 @@ public class BlockStateValidator {
 
             String blockId = spec.blockId();
             Map<String, Set<String>> propertyValues = definedValuesByBlock.computeIfAbsent(
-                blockId, k -> new HashMap<>()
+                blockId, _ -> new HashMap<>()
             );
 
             // Track which values are defined for each property
             for (Map.Entry<String, String> prop : spec.properties().entrySet()) {
-                propertyValues.computeIfAbsent(prop.getKey(), k -> new HashSet<>())
+                propertyValues.computeIfAbsent(prop.getKey(), _ -> new HashSet<>())
                     .add(prop.getValue());
             }
         }
@@ -104,7 +104,7 @@ public class BlockStateValidator {
 
             // Check if block exists in registry first
             Identifier id = Identifier.tryParse(blockId);
-            if (id == null || !Registries.BLOCK.containsId(id)) {
+            if (id == null || !BuiltInRegistries.BLOCK.containsKey(id)) {
                 // Block doesn't exist in registry (mod not loaded), skip validation
                 continue;
             }
@@ -163,16 +163,17 @@ public class BlockStateValidator {
                 return possibleValues;
             }
 
-            if (!Registries.BLOCK.containsId(id)) {
+            if (!BuiltInRegistries.BLOCK.containsKey(id)) {
                 return possibleValues;
             }
 
-            Block block = Registries.BLOCK.get(id);
-
-            BlockState defaultState = block.getDefaultState();
-            if (defaultState == null) {
+            var holder = BuiltInRegistries.BLOCK.get(id);
+            if (holder.isEmpty()) {
                 return possibleValues;
             }
+
+            Block block = holder.get().value();
+            BlockState defaultState = block.defaultBlockState();
 
             // Get all properties of the block
             for (Property<?> property : defaultState.getProperties()) {
@@ -181,7 +182,7 @@ public class BlockStateValidator {
                 // Only check properties that are specified in the blockstate definitions
                 if (propertyNames.contains(propertyName)) {
                     Set<String> values = new LinkedHashSet<>();
-                    for (Object value : property.getValues()) {
+                    for (Object value : property.getPossibleValues()) {
                         values.add(value.toString());
                     }
                     possibleValues.put(propertyName, values);

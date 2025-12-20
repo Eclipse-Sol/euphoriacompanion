@@ -4,13 +4,14 @@ import eclipse.euphoriacompanion.EuphoriaCompanion;
 import eclipse.euphoriacompanion.config.ModConfig;
 import eclipse.euphoriacompanion.parser.BlockPropertiesParser;
 import eclipse.euphoriacompanion.report.AnalysisReport;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.BlockRenderLayer;
-import net.minecraft.client.render.BlockRenderLayers;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.TagKey;
+import net.minecraft.resources.Identifier;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -267,15 +268,15 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
                 return blocks;
             }
 
-            Identifier tagId = Identifier.of(parts[0], parts[1]);
-            TagKey<Block> tagKey = TagKey.of(Registries.BLOCK.getKey(), tagId);
+            Identifier tagId = Identifier.fromNamespaceAndPath(parts[0], parts[1]);
+            TagKey<@NotNull Block> tagKey = TagKey.create(BuiltInRegistries.BLOCK.key(), tagId);
 
             // Get all blocks with this tag
-            Registries.BLOCK.iterateEntries(tagKey).forEach(entry -> {
-                Block block = entry.value();
-                Identifier blockId = Registries.BLOCK.getId(block);
+            for (var holder : BuiltInRegistries.BLOCK.getTagOrEmpty(tagKey)) {
+                Block block = holder.value();
+                Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
                 blocks.add(blockId.toString());
-            });
+            }
 
         } catch (Exception e) {
             EuphoriaCompanion.LOGGER.error("Failed to resolve tag: {}", tagName, e);
@@ -321,8 +322,8 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
         // Categorize all blocks from registry
         Map<String, Map<String, List<String>>> missingByMod = new TreeMap<>();
 
-        for (Block block : Registries.BLOCK) {
-            Identifier blockId = Registries.BLOCK.getId(block);
+        for (Block block : BuiltInRegistries.BLOCK) {
+            Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
             String blockIdStr = blockId.toString();
 
             // Skip if already covered (by direct definitions or used tags)
@@ -334,8 +335,8 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
             String category = categorizeBlock(block);
             if (category != null) {
                 String namespace = blockId.getNamespace();
-                missingByMod.computeIfAbsent(namespace, k -> new TreeMap<>())
-                        .computeIfAbsent(category, k -> new ArrayList<>())
+                missingByMod.computeIfAbsent(namespace, _ -> new TreeMap<>())
+                        .computeIfAbsent(category, _ -> new ArrayList<>())
                         .add(blockIdStr);
             }
         }
@@ -358,13 +359,13 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
      * Quick scan - only checks the default blockstate
      */
     private String categorizeBlockQuick(Block block) {
-        BlockState defaultState = block.getDefaultState();
+        BlockState defaultState = block.defaultBlockState();
 
         // Check categories in priority order based on config
         // Block Entity is the highest priority since it may require special shader handling
-        if (config.checkBlockEntity && block instanceof net.minecraft.block.BlockEntityProvider) {
+        if (config.checkBlockEntity && block instanceof net.minecraft.world.level.block.EntityBlock) {
             return "Block Entity";
-        } else if (config.checkLightEmitting && defaultState.getLuminance() > 0) {
+        } else if (config.checkLightEmitting && defaultState.getLightEmission() > 0) {
             return "Light Emitting";
         } else if (config.checkTranslucent && isTranslucent(defaultState)) {
             return "Translucent";
@@ -383,7 +384,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
      */
     private String categorizeBlockDeep(Block block) {
         // Block Entity check first (same as quick scan - highest priority)
-        if (config.checkBlockEntity && block instanceof net.minecraft.block.BlockEntityProvider) {
+        if (config.checkBlockEntity && block instanceof net.minecraft.world.level.block.EntityBlock) {
             return "Block Entity";
         }
 
@@ -393,8 +394,8 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
         boolean allFull = true;
 
         // Iterate through all possible blockstates
-        for (BlockState state : block.getStateManager().getStates()) {
-            if (config.checkLightEmitting && state.getLuminance() > 0) {
+        for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+            if (config.checkLightEmitting && state.getLightEmission() > 0) {
                 anyLightEmitting = true;
             }
             if (config.checkTranslucent && isTranslucent(state)) {
@@ -403,7 +404,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
             if (config.checkNonFull && isNonFull(state)) {
                 anyNonFull = true;
             }
-            if (!state.isOpaqueFullCube()) {
+            if (!state.isSolidRender()) {
                 allFull = false;
             }
         }
@@ -427,9 +428,9 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
      */
     private boolean isTranslucent(BlockState state) {
         try {
-            BlockRenderLayer renderLayer = BlockRenderLayers.getBlockLayer(state);
+            ChunkSectionLayer renderLayer = ItemBlockRenderTypes.getChunkRenderType(state);
             // Both TRANSLUCENT and TRIPWIRE are treated as translucent by shaders
-            return renderLayer == BlockRenderLayer.TRANSLUCENT || renderLayer == BlockRenderLayer.TRIPWIRE;
+            return renderLayer == ChunkSectionLayer.TRANSLUCENT || renderLayer == ChunkSectionLayer.TRIPWIRE;
         } catch (Exception e) {
             return false;
         }
@@ -441,7 +442,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
     private boolean isNonFull(BlockState state) {
         try {
             // Check if light can leak through any side
-            return !state.isOpaqueFullCube();
+            return !state.isSolidRender();
         } catch (Exception e) {
             return false;
         }
@@ -485,28 +486,33 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
             }
 
             // Check if the block is actually registered
-            if (!Registries.BLOCK.containsId(id)) {
+            if (!BuiltInRegistries.BLOCK.containsKey(id)) {
                 return null; // Block doesn't exist in registry
             }
 
-            Block block = Registries.BLOCK.get(id);
-
-            BlockState state = block.getDefaultState();
-            if (state == null) {
-                EuphoriaCompanion.LOGGER.warn("Block has no default state: {}", id);
+            var holder = BuiltInRegistries.BLOCK.get(id);
+            if (holder.isEmpty()) {
                 return null;
             }
 
-            BlockRenderLayer renderLayer = BlockRenderLayers.getBlockLayer(state);
+            Block block = holder.get().value();
+            BlockState state = block.defaultBlockState();
 
-            // Map BlockRenderLayer enum to shader layer names
+            ChunkSectionLayer renderLayer = ItemBlockRenderTypes.getChunkRenderType(state);
+
+            // Map ChunkSectionLayer to shader layer names
             // Note: In 1.21.11+, CUTOUT_MIPPED was merged into CUTOUT
-            return switch (renderLayer) {
-                case SOLID -> "solid";
-                case CUTOUT -> "cutout";
-                case TRANSLUCENT -> "translucent";
-                case TRIPWIRE -> "translucent"; // Shaders treat tripwire as translucent
-            };
+            if (renderLayer == ChunkSectionLayer.SOLID) {
+                return "solid";
+            } else if (renderLayer == ChunkSectionLayer.CUTOUT) {
+                return "cutout";
+            } else if (renderLayer == ChunkSectionLayer.TRANSLUCENT) {
+                return "translucent";
+            } else if (renderLayer == ChunkSectionLayer.TRIPWIRE) {
+                return "translucent"; // Shaders treat tripwire as translucent
+            }
+
+            return null;
 
         } catch (Exception e) {
             EuphoriaCompanion.LOGGER.error("Failed to get render layer for: {}", blockId, e);
@@ -518,7 +524,7 @@ public record ShaderAnalyzer(ModConfig config, int currentMCVersion) {
      * Calculates total number of blocks registered in the game
      */
     private int calculateTotalBlocksInGame() {
-        return Registries.BLOCK.size();
+        return BuiltInRegistries.BLOCK.size();
     }
 
     /**

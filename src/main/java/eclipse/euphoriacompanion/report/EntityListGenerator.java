@@ -1,9 +1,9 @@
 package eclipse.euphoriacompanion.report;
 
 import eclipse.euphoriacompanion.EuphoriaCompanion;
-import net.minecraft.entity.EntityType;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -32,13 +32,13 @@ public class EntityListGenerator {
         // Group entities by namespace (mod)
         Map<String, List<String>> entitiesByMod = new TreeMap<>();
 
-        for (EntityType<?> entityType : Registries.ENTITY_TYPE) {
-            Identifier id = Registries.ENTITY_TYPE.getId(entityType);
+        for (EntityType<?> entityType : BuiltInRegistries.ENTITY_TYPE) {
+            Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
 
             String namespace = id.getNamespace();
             String entityName = id.toString();
 
-            entitiesByMod.computeIfAbsent(namespace, k -> new ArrayList<>())
+            entitiesByMod.computeIfAbsent(namespace, _ -> new ArrayList<>())
                     .add(entityName);
         }
 

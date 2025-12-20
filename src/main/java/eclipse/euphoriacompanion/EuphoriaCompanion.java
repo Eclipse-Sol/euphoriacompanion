@@ -4,8 +4,9 @@ import eclipse.euphoriacompanion.analyzer.ShaderpackAnalysisInitiator;
 import eclipse.euphoriacompanion.config.ModConfig;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.KeyMapping;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +14,7 @@ import org.slf4j.LoggerFactory;
 public class EuphoriaCompanion implements ModInitializer {
     public static final String MODID = "EuphoriaCompanion";
     public static final Logger LOGGER = LoggerFactory.getLogger(MODID);
-    public static KeyBinding ANALYZE_KEY;
+    public static KeyMapping ANALYZE_KEY;
 
     private static long lastAnalysisTime = 0;
     private static final long COOLDOWN_MS = 2000; // 2 seconds
@@ -56,14 +57,17 @@ public class EuphoriaCompanion implements ModInitializer {
         LOGGER.info("Tag support: {}", config.isTagSupportEnabled() ? "enabled" : "disabled");
 
         try {
+            // Register custom keybinding category
+            KeyMapping.Category category = KeyMapping.Category.register(
+                Identifier.fromNamespaceAndPath("euphoriacompanion", "keys")
+            );
+
             // Register the keybinding using Fabric API
-            // In 1.21+, KeyBinding uses Category that requires an Identifier
-            ANALYZE_KEY = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            ANALYZE_KEY = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.euphoriacompanion.analyze",
-                InputUtil.Type.KEYSYM,
+                InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_F6,
-                net.minecraft.client.option.KeyBinding.Category.create(
-                    net.minecraft.util.Identifier.of("euphoriacompanion", "keys"))));
+                category));
         } catch (Exception e) {
             LOGGER.error("Failed to register keybinding", e);
         }

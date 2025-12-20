@@ -369,6 +369,15 @@ public class BlockPropertiesParser {
         ConditionalContext current = stack.pop();
 
         // Check if parent context is active
+        boolean elseActive = isElseActive(stack, current);
+
+        stack.push(new ConditionalContext(current.supported(), elseActive));
+
+        EuphoriaCompanion.LOGGER.debug("Line {}: #else -> {} (supported: {}, stack depth after: {})",
+            lineNumber, elseActive, current.supported(), stack.size());
+    }
+
+    private boolean isElseActive(Deque<ConditionalContext> stack, ConditionalContext current) {
         boolean parentActive = isActiveContext(stack);
 
         // #else logic:
@@ -382,11 +391,7 @@ public class BlockPropertiesParser {
             // Unsupported #if: activate #else as fallback (assume we want the #else block)
             elseActive = parentActive;
         }
-
-        stack.push(new ConditionalContext(current.supported(), elseActive));
-
-        EuphoriaCompanion.LOGGER.debug("Line {}: #else -> {} (supported: {}, stack depth after: {})",
-            lineNumber, elseActive, current.supported(), stack.size());
+        return elseActive;
     }
 
     /**
@@ -479,7 +484,7 @@ public class BlockPropertiesParser {
                     int existingProperty = blockToProperty.get(normalizedId);
 
                     // Track this as a duplicate
-                    duplicateBlocks.computeIfAbsent(normalizedId, k -> new ArrayList<>());
+                    duplicateBlocks.computeIfAbsent(normalizedId, _ -> new ArrayList<>());
                     List<Integer> properties = duplicateBlocks.get(normalizedId);
 
                     // Add the existing property if not already in the list
