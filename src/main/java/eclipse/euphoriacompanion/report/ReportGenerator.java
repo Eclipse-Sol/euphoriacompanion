@@ -1,7 +1,5 @@
 package eclipse.euphoriacompanion.report;
 
-import eclipse.euphoriacompanion.analyzer.ShaderAnalyzer.RenderLayerMismatch;
-
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,7 +14,34 @@ import java.util.*;
  */
 public class ReportGenerator {
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * Comparator for sorting metadata categories in priority order.
+     * Priority: Visually Distinct > Same texture as meta X (numeric) > Potentially Distinct
+     */
+    private static final Comparator<Map.Entry<String, List<String>>> METADATA_CATEGORY_COMPARATOR = (e1, e2) -> {
+        String cat1 = e1.getKey();
+        String cat2 = e2.getKey();
+
+        if (cat1.startsWith("Visually Distinct")) return -1;
+        if (cat2.startsWith("Visually Distinct")) return 1;
+
+        if (cat1.startsWith("Potentially Distinct")) return 1;
+        if (cat2.startsWith("Potentially Distinct")) return -1;
+
+        if (cat1.startsWith("Same texture") && cat2.startsWith("Same texture")) {
+            try {
+                int meta1 = Integer.parseInt(cat1.replaceAll(".*meta (\\d+).*", "$1"));
+                int meta2 = Integer.parseInt(cat2.replaceAll(".*meta (\\d+).*", "$1"));
+                return Integer.compare(meta1, meta2);
+            } catch (NumberFormatException e) {
+                return cat1.compareTo(cat2);
+            }
+        }
+
+        return cat1.compareTo(cat2);
+    };
 
     /**
      * Generates and saves a report to the specified path.
@@ -28,17 +53,13 @@ public class ReportGenerator {
 
         Files.createDirectories(outputPath.getParent());
 
-        // Write to temporary file first
         Path tempPath = outputPath.getParent().resolve(outputPath.getFileName() + ".tmp");
 
         try (BufferedWriter writer = Files.newBufferedWriter(tempPath)) {
             writeHeader(writer, report);
             writeMissingBlocks(writer, report);
-            writeTagCoverage(writer, report);
-            writeUnusedTags(writer, report);
             writeIncompleteBlockStates(writer, report);
             writeDuplicateDefinitions(writer, report);
-            writeRenderLayerMismatches(writer, report);
         }
 
         // Atomic rename - only appears as complete file
@@ -52,7 +73,6 @@ public class ReportGenerator {
         writer.write("=== SHADER ANALYSIS: " + report.getShaderpackName() + " ===\n");
         writer.write("Generated: " + LocalDateTime.now().format(TIMESTAMP_FORMAT) + "\n\n");
 
-        // Statistics
         int totalInGame = report.getTotalBlocksInGame();
         int totalInShader = report.getTotalBlocksInShader();
         int totalMissing = report.getTotalMissingBlocks();
@@ -62,7 +82,6 @@ public class ReportGenerator {
         writer.write("  Blocks defined in shader: " + totalInShader + "\n");
         writer.write("  Missing blocks: " + totalMissing + "\n");
 
-        // Calculate coverage percentage: 100 * (1 - missing/total)
         double coverage = totalInGame > 0 ? 100.0 * (1.0 - (double) totalMissing / totalInGame) : 0.0;
         writer.write(String.format("  Coverage: %.2f%%\n\n", coverage));
     }
@@ -85,24 +104,21 @@ public class ReportGenerator {
             String modName = modEntry.getKey();
             Map<String, List<String>> categories = modEntry.getValue();
 
-            // Count total blocks for this mod
-            int totalBlocks = categories.values().stream()
-                .mapToInt(List::size)
-                .sum();
+            int totalBlocks = 0;
+            for (List<String> blocks : categories.values()) {
+                totalBlocks += blocks.size();
+            }
 
             writer.write(modName + " (" + totalBlocks + " blocks):\n");
 
-            // Write each category
             for (Map.Entry<String, List<String>> categoryEntry : categories.entrySet()) {
                 String category = categoryEntry.getKey();
                 List<String> blocks = categoryEntry.getValue();
 
                 writer.write("  " + category + " (" + blocks.size() + "):\n");
 
-                // Sort blocks alphabetically
                 Collections.sort(blocks);
-
-                // Write blocks (newline-separated only, no decorative characters)
+                
                 for (String block : blocks) {
                     writer.write(" " + block + "\n");
                 }
@@ -113,118 +129,55 @@ public class ReportGenerator {
     }
 
     /**
-     * Writes the tag coverage section
-     */
-    private static void writeTagCoverage(BufferedWriter writer, AnalysisReport report) throws IOException {
-        writer.write("----------------------------------------\n");
-        writer.write("COVERED BY TAGS:\n\n");
-
-        Map<String, Set<String>> tagCoverage = report.getTagCoverage();
-        Map<String, String> tagDefinitions = report.getTagDefinitions();
-        Map<String, Integer> tagToProperty = report.getTagToProperty();
-
-        if (tagCoverage.isEmpty()) {
-            if (report.isTagSupportEnabled()) {
-                writer.write("No tag coverage.\n\n");
-            } else {
-                writer.write("Tag support is disabled.\n\n");
-            }
-            return;
-        }
-
-        for (Map.Entry<String, Set<String>> entry : tagCoverage.entrySet()) {
-            String tagIdentifier = entry.getKey();
-            Set<String> blocks = entry.getValue();
-
-            String tagValue = tagDefinitions.getOrDefault(tagIdentifier, "unknown");
-            Integer propertyId = tagToProperty.get(tagIdentifier);
-            String propertyStr = propertyId != null ? "block." + propertyId : "unused";
-
-            writer.write("Tag: " + tagIdentifier + " = " + tagValue + " (" + propertyStr + ") - " + blocks.size() + " blocks\n");
-
-            // Sort blocks alphabetically
-            List<String> sortedBlocks = new ArrayList<>(blocks);
-            Collections.sort(sortedBlocks);
-
-            // Write blocks (newline-separated only)
-            for (String block : sortedBlocks) {
-                writer.write(block + "\n");
-            }
-
-            writer.write("\n");
-        }
-    }
-
-    /**
-     * Writes the unused tags warning section
-     */
-    private static void writeUnusedTags(BufferedWriter writer, AnalysisReport report) throws IOException {
-        Map<String, String> tagDefinitions = report.getTagDefinitions();
-        Map<String, Integer> tagToProperty = report.getTagToProperty();
-
-        // Find tags that are defined but not assigned to any property
-        List<String> unusedTags = new ArrayList<>();
-        for (String tagIdentifier : tagDefinitions.keySet()) {
-            if (!tagToProperty.containsKey(tagIdentifier)) {
-                unusedTags.add(tagIdentifier);
-            }
-        }
-
-        if (unusedTags.isEmpty()) {
-            return; // No unused tags, skip this section entirely
-        }
-
-        writer.write("----------------------------------------\n");
-        writer.write("UNUSED TAG DEFINITIONS:\n\n");
-        writer.write("WARNING: The following tags are defined but not assigned to any block.XX property.\n");
-        writer.write("These tags will not affect shader behavior.\n\n");
-
-        Collections.sort(unusedTags);
-
-        for (String tagIdentifier : unusedTags) {
-            String tagValue = tagDefinitions.get(tagIdentifier);
-            writer.write("  " + tagIdentifier + " = " + tagValue + "\n");
-        }
-
-        writer.write("\n");
-    }
-
-    /**
-     * Writes the incomplete blockstate section
+     * Writes the missing meta values section
      */
     private static void writeIncompleteBlockStates(BufferedWriter writer, AnalysisReport report)
             throws IOException {
         Map<String, Map<String, List<String>>> incompleteBlockStates = report.getIncompleteBlockStates();
 
         writer.write("----------------------------------------\n");
-        writer.write("INCOMPLETE BLOCKSTATE DEFINITIONS:\n\n");
+        writer.write("MISSING META VALUES:\n\n");
+        writer.write("WARNING: Always test missing metadata in a separate save first.\n");
+        writer.write("Some invalid metadata values can crash the game or brick your world!\n\n");
 
         if (incompleteBlockStates.isEmpty()) {
-            writer.write("All blockstate definitions are complete.\n\n");
+            writer.write("All metadata values are complete.\n\n");
             return;
         }
 
-        // Sort by block ID
         List<Map.Entry<String, Map<String, List<String>>>> sortedBlocks =
-            new ArrayList<>(incompleteBlockStates.entrySet());
+                new ArrayList<>(incompleteBlockStates.entrySet());
         sortedBlocks.sort(Map.Entry.comparingByKey());
 
-        for (var blockEntry : sortedBlocks) {
+        for (Map.Entry<String, Map<String, List<String>>> blockEntry : sortedBlocks) {
             String blockId = blockEntry.getKey();
-            Map<String, List<String>> missingByProperty = blockEntry.getValue();
+            Map<String, List<String>> categoriesMap = blockEntry.getValue();
 
             writer.write(blockId + ":\n");
 
-            for (Map.Entry<String, List<String>> propEntry : missingByProperty.entrySet()) {
-                String propertyName = propEntry.getKey();
-                List<String> missingValues = propEntry.getValue();
+            // Sort categories for better readability
+            List<Map.Entry<String, List<String>>> sortedCategories = sortMetadataCategories(categoriesMap);
 
-                writer.write("  " + propertyName + " - Missing values: " +
-                    String.join(", ", missingValues) + "\n");
+            for (Map.Entry<String, List<String>> categoryEntry : sortedCategories) {
+                String categoryName = categoryEntry.getKey();
+                List<String> missingValues = categoryEntry.getValue();
+
+                writer.write("  " + categoryName + " - Missing values: " +
+                        String.join(",", missingValues) + "\n");
             }
 
             writer.write("\n");
         }
+    }
+
+    /**
+     * Sorts metadata categories in priority order for report display.
+     * Uses METADATA_CATEGORY_COMPARATOR for consistent sorting.
+     */
+    private static List<Map.Entry<String, List<String>>> sortMetadataCategories(Map<String, List<String>> categoriesMap) {
+        List<Map.Entry<String, List<String>>> sortedCategories = new ArrayList<>(categoriesMap.entrySet());
+        sortedCategories.sort(METADATA_CATEGORY_COMPARATOR);
+        return sortedCategories;
     }
 
     /**
@@ -242,57 +195,26 @@ public class ReportGenerator {
             return;
         }
 
-        // Sort by block ID
         List<Map.Entry<String, List<Integer>>> sortedDuplicates =
-            new ArrayList<>(duplicates.entrySet());
+                new ArrayList<>(duplicates.entrySet());
         sortedDuplicates.sort(Map.Entry.comparingByKey());
 
-        for (var entry : sortedDuplicates) {
+        for (Map.Entry<String, List<Integer>> entry : sortedDuplicates) {
             String blockState = entry.getKey();
             List<Integer> propertyIds = entry.getValue();
 
             Collections.sort(propertyIds);
-            String propertyIdsStr = propertyIds.stream()
-                .map(id -> "block." + id)
-                .reduce((a, b) -> a + ", " + b)
-                .orElse("");
+
+            StringBuilder propertyIdsStr = new StringBuilder();
+            for (int i = 0; i < propertyIds.size(); i++) {
+                if (i > 0) {
+                    propertyIdsStr.append(", ");
+                }
+                propertyIdsStr.append("block.").append(propertyIds.get(i));
+            }
 
             writer.write(blockState + " is defined multiple times:\n");
             writer.write("  Properties: " + propertyIdsStr + "\n\n");
-        }
-    }
-
-    /**
-     * Writes the render layer mismatches section
-     */
-    private static void writeRenderLayerMismatches(BufferedWriter writer, AnalysisReport report)
-            throws IOException {
-        Map<String, RenderLayerMismatch> mismatches = report.getRenderLayerMismatches();
-
-        writer.write("----------------------------------------\n");
-        writer.write("RENDER LAYER MISMATCHES (" + mismatches.size() + "):\n\n");
-
-        writer.write("NOTE: The shader pack must be actively loaded in your shader loader\n");
-        writer.write("(Iris, OptiFine, Oculus, etc.) at the time this report is generated\n");
-        writer.write("for accurate render layer validation. If the shader is not loaded,\n");
-        writer.write("mismatches may be incorrectly reported.\n\n");
-
-        if (mismatches.isEmpty()) {
-            writer.write("No render layer mismatches found.\n\n");
-            return;
-        }
-
-        // Sort by block ID
-        List<Map.Entry<String, RenderLayerMismatch>> sortedMismatches =
-            new ArrayList<>(mismatches.entrySet());
-        sortedMismatches.sort(Map.Entry.comparingByKey());
-
-        for (Map.Entry<String, RenderLayerMismatch> entry : sortedMismatches) {
-            String blockId = entry.getKey();
-            RenderLayerMismatch mismatch = entry.getValue();
-
-            writer.write(blockId + "\n");
-            writer.write("Expected: " + mismatch.expected() + " | Actual: " + mismatch.actual() + "\n\n");
         }
     }
 }

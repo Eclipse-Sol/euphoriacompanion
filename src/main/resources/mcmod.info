@@ -1,0 +1,16 @@
+[
+{
+  "modid": "euphoriacompanion",
+  "name": "Euphoria Companion",
+  "description": "Aids in shader development by comparing what blocks have been covered by a shader.",
+  "version": "${version}",
+  "mcversion": "1.7.10",
+  "url": "https://github.com/Eclipse-Sol/euphoriacompanion",
+  "updateUrl": "",
+  "authorList": ["Eclipse"],
+  "credits": "",
+  "logoFile": "assets/euphoriacompanion/icon.png",
+  "screenshots": [],
+  "dependencies": []
+}
+]

@@ -1,40 +1,38 @@
 package eclipse.euphoriacompanion;
 
+import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.event.FMLInitializationEvent;
+import cpw.mods.fml.relauncher.Side;
 import eclipse.euphoriacompanion.analyzer.ShaderpackAnalysisInitiator;
-import eclipse.euphoriacompanion.config.ModConfig;
-import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.KeyMapping;
-import com.mojang.blaze3d.platform.InputConstants;
-import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import eclipse.euphoriacompanion.client.ClientEventHandler;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-public class EuphoriaCompanion implements ModInitializer {
-    public static final String MODID = "EuphoriaCompanion";
-    public static final Logger LOGGER = LoggerFactory.getLogger(MODID);
-    public static KeyMapping ANALYZE_KEY;
+import java.util.concurrent.atomic.AtomicLong;
 
-    private static long lastAnalysisTime = 0;
-    private static final long COOLDOWN_MS = 2000; // 2 seconds
+@Mod(modid = EuphoriaCompanion.MODID, name = EuphoriaCompanion.NAME, version = EuphoriaCompanion.VERSION)
+public class EuphoriaCompanion {
+    public static final String MODID = "euphoriacompanion";
+    public static final String NAME = "Euphoria Companion";
+    public static final String VERSION = "2.0.1";
 
-    /**
-     * Process all shader packs in the game directory.
-     * Runs on a separate thread to avoid blocking the main Minecraft thread.
-     * Has a 2-second cooldown to prevent accidental spam.
-     */
+    public static final Logger LOGGER = LogManager.getLogger(MODID);
+
+    private static final AtomicLong lastAnalysisTime = new AtomicLong(0);
+    private static final long COOLDOWN_MS = 2000;
+
     public static void processShaderPacks() {
         long currentTime = System.currentTimeMillis();
-        long timeSinceLastAnalysis = currentTime - lastAnalysisTime;
+        long timeSinceLastAnalysis = currentTime - lastAnalysisTime.get();
 
         if (timeSinceLastAnalysis < COOLDOWN_MS) {
-            long remainingCooldown = (COOLDOWN_MS - timeSinceLastAnalysis) / 1000;
-            LOGGER.info("Analysis on cooldown, please wait {} seconds", remainingCooldown + 1);
+            long remainingCooldown = (COOLDOWN_MS - timeSinceLastAnalysis + 999) / 1000;
+            LOGGER.info("Analysis on cooldown, please wait {} second{}", remainingCooldown, remainingCooldown == 1 ? "" : "s");
             return;
         }
 
-        lastAnalysisTime = currentTime;
+        lastAnalysisTime.set(currentTime);
 
         Thread analysisThread = new Thread(() -> {
             try {
@@ -44,32 +42,17 @@ public class EuphoriaCompanion implements ModInitializer {
             }
         }, "EuphoriaCompanion-Analysis");
 
-        analysisThread.setDaemon(true); // Daemon thread won't prevent game shutdown
+        analysisThread.setDaemon(true);
         analysisThread.start();
     }
 
-    @Override
-    public void onInitialize() {
-        LOGGER.info("Initializing Euphoria Companion");
-
-        // Load configuration
-        ModConfig config = ModConfig.getInstance();
-        LOGGER.info("Tag support: {}", config.isTagSupportEnabled() ? "enabled" : "disabled");
-
-        try {
-            // Register custom keybinding category
-            KeyMapping.Category category = KeyMapping.Category.register(
-                Identifier.fromNamespaceAndPath("euphoriacompanion", "keys")
-            );
-
-            // Register the keybinding using Fabric API
-            ANALYZE_KEY = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.euphoriacompanion.analyze",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_F6,
-                category));
-        } catch (Exception e) {
-            LOGGER.error("Failed to register keybinding", e);
+    @Mod.EventHandler
+    public void init(FMLInitializationEvent event) {
+        // Only register client-side components on the client to avoid server crashes
+        if (FMLCommonHandler.instance().getSide() == Side.CLIENT) {
+            ClientEventHandler.registerKeyBinding();
+            FMLCommonHandler.instance().bus().register(new ClientEventHandler());
         }
     }
+
 }

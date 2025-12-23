@@ -1,198 +1,243 @@
 package eclipse.euphoriacompanion.analyzer;
 
+import cpw.mods.fml.common.registry.GameRegistry;
 import eclipse.euphoriacompanion.EuphoriaCompanion;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.level.block.state.properties.Property;
-import net.minecraft.resources.Identifier;
+import net.minecraft.block.Block;
+import net.minecraft.util.IIcon;
 
 import java.util.*;
 
 /**
- * Validates that block definitions with specific blockstates cover all possible values.
+ * Validates that block definitions with specific metadata values cover all possible metadata variants.
+ * Adapted for Minecraft 1.7.10 metadata system (0-15 values instead of BlockState properties)
  */
 public class BlockStateValidator {
 
     /**
-     * Represents a parsed blockstate specification
-     *
-     * @param blockId    Normalized: "namespace:blockname"
-     * @param properties property -> value
+     * Parses a block+metadata string for 1.7.10
+     * Format: "modName:blockName:metadata" or "blockName:metadata" (vanilla)
+     * Returns null if no metadata specified
      */
-        public record BlockStateSpec(String blockId, Map<String, String> properties) {
-    }
-
-    /**
-     * Parses a blockstate string
-     * Format: "modName:blockName:prop1=val1:prop2=val2..." or "blockName:prop1=val1:prop2=val2..." (vanilla)
-     */
-    public static BlockStateSpec parseBlockState(String fullBlockId) {
+    public static BlockMetadataSpec parseBlockMetadata(String fullBlockId) {
         String[] segments = fullBlockId.split(":");
 
         if (segments.length < 2) {
-            return null; // Just a block ID, no blockstates
+            return null;
         }
 
         String namespace;
         String blockName;
-        int propertyStartIndex;
+        String metadataStr;
 
-        // Check if second segment contains '=' to determine if first segment is namespace or blockname
-        if (segments[1].contains("=")) {
-            // Format: "blockName:prop1=val1..."
+        if (segments.length == 2) {
             namespace = "minecraft";
             blockName = segments[0];
-            propertyStartIndex = 1;
-        } else {
-            // Format: "namespace:blockName:prop1=val1..."
+            metadataStr = segments[1];
+        } else if (segments.length == 3) {
             namespace = segments[0];
             blockName = segments[1];
-            propertyStartIndex = 2;
+            metadataStr = segments[2];
+        } else {
+            return null;
         }
 
-        // Parse properties
-        Map<String, String> properties = new LinkedHashMap<>();
-        for (int i = propertyStartIndex; i < segments.length; i++) {
-            String propertyDef = segments[i];
-            String[] propParts = propertyDef.split("=", 2);
-            if (propParts.length == 2) {
-                properties.put(propParts[0], propParts[1]);
+        int metadata;
+        try {
+            metadata = Integer.parseInt(metadataStr);
+            if (metadata < 0 || metadata > 15) {
+                return null;
             }
-        }
-
-        if (properties.isEmpty()) {
-            return null; // No blockstate properties defined
+        } catch (NumberFormatException e) {
+            return null;
         }
 
         String blockId = namespace + ":" + blockName;
-        return new BlockStateSpec(blockId, properties);
+        return new BlockMetadataSpec(blockId, metadata);
     }
 
     /**
-     * Validates blockstate completeness and returns missing property values
-     * Returns: Map<blockId, Map<propertyName, List<missingValues>>>
+     * Validates metadata completeness and returns categorized missing metadata values
+     * Returns: Map<blockId, CategorizedMetadata>
      */
-    public static Map<String, Map<String, List<String>>> validateBlockStates(Map<String, Integer> blockToProperty) {
-        // Group specs by block ID and track which property values are defined
-        Map<String, Map<String, Set<String>>> definedValuesByBlock = new HashMap<>();
+    public static Map<String, CategorizedMetadata> validateBlockMetadata(Map<String, Integer> blockToProperty) {
+        Map<String, Set<Integer>> definedMetadataByBlock = new HashMap<>();
 
         for (String fullId : blockToProperty.keySet()) {
-            BlockStateSpec spec = parseBlockState(fullId);
+            BlockMetadataSpec spec = parseBlockMetadata(fullId);
             if (spec == null) {
-                continue; // No blockstates defined
+                continue;
             }
 
-            String blockId = spec.blockId();
-            Map<String, Set<String>> propertyValues = definedValuesByBlock.computeIfAbsent(
-                blockId, _ -> new HashMap<>()
-            );
+            String blockId = spec.getBlockId();
+            Set<Integer> metadataValues = definedMetadataByBlock.computeIfAbsent(blockId, k -> new HashSet<>());
 
-            // Track which values are defined for each property
-            for (Map.Entry<String, String> prop : spec.properties().entrySet()) {
-                propertyValues.computeIfAbsent(prop.getKey(), _ -> new HashSet<>())
-                    .add(prop.getValue());
-            }
+            metadataValues.add(spec.getMetadata());
         }
 
-        // For each block, check if all possible values are defined
-        Map<String, Map<String, List<String>>> incompleteBlockStates = new TreeMap<>();
+        Map<String, CategorizedMetadata> incompleteMetadata = new TreeMap<>();
 
-        for (Map.Entry<String, Map<String, Set<String>>> entry : definedValuesByBlock.entrySet()) {
+        for (Map.Entry<String, Set<Integer>> entry : definedMetadataByBlock.entrySet()) {
             String blockId = entry.getKey();
-            Map<String, Set<String>> definedValues = entry.getValue();
+            Set<Integer> definedMetadata = entry.getValue();
 
-            // Check if block exists in registry first
-            Identifier id = Identifier.tryParse(blockId);
-            if (id == null || !BuiltInRegistries.BLOCK.containsKey(id)) {
-                // Block doesn't exist in registry (mod not loaded), skip validation
-                continue;
-            }
+            CategorizedMetadata categorized = getCategorizedMetadata(blockId, definedMetadata);
 
-            // Get all possible values from Minecraft registry
-            Map<String, Set<String>> possibleValues = getPossiblePropertyValues(blockId, definedValues.keySet());
-
-            if (possibleValues.isEmpty()) {
-                // Block exists but has no properties matching what's defined - skip
-                continue;
-            }
-
-            // Compare defined vs possible (case-insensitive)
-            Map<String, List<String>> missingByProperty = new TreeMap<>();
-            for (Map.Entry<String, Set<String>> propEntry : possibleValues.entrySet()) {
-                String propertyName = propEntry.getKey();
-                Set<String> allValues = propEntry.getValue();
-                Set<String> defined = definedValues.getOrDefault(propertyName, Collections.emptySet());
-
-                // Create lowercase set for case-insensitive comparison
-                Set<String> definedLowercase = new HashSet<>();
-                for (String val : defined) {
-                    definedLowercase.add(val.toLowerCase());
-                }
-
-                List<String> missing = new ArrayList<>();
-                for (String value : allValues) {
-                    if (!definedLowercase.contains(value.toLowerCase())) {
-                        missing.add(value);
-                    }
-                }
-
-                if (!missing.isEmpty()) {
-                    Collections.sort(missing);
-                    missingByProperty.put(propertyName, missing);
-                }
-            }
-
-            if (!missingByProperty.isEmpty()) {
-                incompleteBlockStates.put(blockId, missingByProperty);
+            if (!categorized.isEmpty()) {
+                incompleteMetadata.put(blockId, categorized);
             }
         }
 
-        return incompleteBlockStates;
+        return incompleteMetadata;
     }
 
     /**
-     * Gets all possible values for the specified properties of a block
+     * Gets categorized missing metadata values for a block
      */
-    private static Map<String, Set<String>> getPossiblePropertyValues(String blockId, Set<String> propertyNames) {
-        Map<String, Set<String>> possibleValues = new HashMap<>();
+    private static CategorizedMetadata getCategorizedMetadata(String blockId, Set<Integer> definedMetadata) {
+        List<Integer> visuallyDistinct = new ArrayList<>();
+        Map<Integer, List<Integer>> duplicatesOfDefined = new TreeMap<>();
+        List<Integer> potentiallyDistinct = new ArrayList<>();
 
         try {
-            Identifier id = Identifier.tryParse(blockId);
-            if (id == null) {
-                return possibleValues;
+            String[] parts = blockId.split(":", 2);
+            if (parts.length != 2) {
+                return new CategorizedMetadata(visuallyDistinct, duplicatesOfDefined, potentiallyDistinct);
             }
 
-            if (!BuiltInRegistries.BLOCK.containsKey(id)) {
-                return possibleValues;
+            String modId = parts[0];
+            String blockName = parts[1];
+
+            Block block = GameRegistry.findBlock(modId, blockName);
+            if (block == null) {
+                return new CategorizedMetadata(visuallyDistinct, duplicatesOfDefined, potentiallyDistinct);
             }
 
-            var holder = BuiltInRegistries.BLOCK.get(id);
-            if (holder.isEmpty()) {
-                return possibleValues;
-            }
-
-            Block block = holder.get().value();
-            BlockState defaultState = block.defaultBlockState();
-
-            // Get all properties of the block
-            for (Property<?> property : defaultState.getProperties()) {
-                String propertyName = property.getName();
-
-                // Only check properties that are specified in the blockstate definitions
-                if (propertyNames.contains(propertyName)) {
-                    Set<String> values = new LinkedHashSet<>();
-                    for (Object value : property.getPossibleValues()) {
-                        values.add(value.toString());
-                    }
-                    possibleValues.put(propertyName, values);
+            // Get icon signatures for all metadata
+            // We validate all metadata 0-15 for blocks that have ANY defined metadata,
+            // regardless of item.getHasSubtypes(), because blocks like farmland have metadata
+            // (moisture levels) even though the item doesn't have subtypes
+            Map<String, Integer> definedIconToMeta = new HashMap<>();
+            for (Integer definedMeta : definedMetadata) {
+                String signature = getIconSignature(block, definedMeta);
+                if (!definedIconToMeta.containsKey(signature)) {
+                    definedIconToMeta.put(signature, definedMeta);
                 }
+            }
+
+            Map<String, List<Integer>> missingIconToMetas = new HashMap<>();
+
+            for (int meta = 0; meta < 16; meta++) {
+                if (definedMetadata.contains(meta)) {
+                    continue;
+                }
+
+                String signature = getIconSignature(block, meta);
+
+                if (definedIconToMeta.containsKey(signature)) {
+                    Integer matchingDefinedMeta = definedIconToMeta.get(signature);
+                    List<Integer> duplicates = duplicatesOfDefined.computeIfAbsent(matchingDefinedMeta, k -> new ArrayList<>());
+                    duplicates.add(meta);
+                } else {
+                    List<Integer> metasWithSignature = missingIconToMetas.computeIfAbsent(signature, k -> new ArrayList<>());
+                    metasWithSignature.add(meta);
+                }
+            }
+
+            for (List<Integer> metasWithSignature : missingIconToMetas.values()) {
+                if (metasWithSignature.size() == 1) {
+                    visuallyDistinct.add(metasWithSignature.get(0));
+                } else {
+                    potentiallyDistinct.addAll(metasWithSignature);
+                }
+            }
+
+            Collections.sort(visuallyDistinct);
+            Collections.sort(potentiallyDistinct);
+
+            for (List<Integer> duplicates : duplicatesOfDefined.values()) {
+                Collections.sort(duplicates);
             }
 
         } catch (Exception e) {
-            EuphoriaCompanion.LOGGER.error("Failed to get property values for: {}", blockId, e);
+            EuphoriaCompanion.LOGGER.error("Failed to categorize metadata for: {}", blockId, e);
         }
 
-        return possibleValues;
+        return new CategorizedMetadata(visuallyDistinct, duplicatesOfDefined, potentiallyDistinct);
+    }
+
+    /**
+     * Gets an icon signature for a block+metadata combination
+     * Returns a string representing the icons for all 6 sides
+     */
+    private static String getIconSignature(Block block, int metadata) {
+        StringBuilder signature = new StringBuilder();
+
+        // Check all 6 sides (0-5: down, up, north, south, west, east)
+        for (int side = 0; side < 6; side++) {
+            try {
+                IIcon icon = block.getIcon(side, metadata);
+                String iconId = (icon != null) ? icon.getIconName() : "null";
+                signature.append(side).append(":").append(iconId).append(";");
+            } catch (Exception e) {
+                signature.append(side).append(":error;");
+            }
+        }
+
+        return signature.toString();
+    }
+
+    /**
+     * Represents a parsed block+metadata specification for 1.7.10
+     * Format: "namespace:blockname:metadata"
+     */
+    public static class BlockMetadataSpec {
+        private final String blockId;
+        private final int metadata;
+
+        public BlockMetadataSpec(String blockId, int metadata) {
+            this.blockId = blockId;
+            this.metadata = metadata;
+        }
+
+        public String getBlockId() {
+            return blockId;
+        }
+
+        public int getMetadata() {
+            return metadata;
+        }
+    }
+
+    /**
+     * Represents categorized missing metadata values
+     */
+    public static class CategorizedMetadata {
+        private final List<Integer> visuallyDistinct;     // Different icons from all defined metadata
+        private final Map<Integer, List<Integer>> duplicatesOfDefined;  // Maps defined meta -> list of duplicates
+        private final List<Integer> potentiallyDistinct;  // Same icons as each other, not in defined
+
+        public CategorizedMetadata(List<Integer> visuallyDistinct,
+                                   Map<Integer, List<Integer>> duplicatesOfDefined,
+                                   List<Integer> potentiallyDistinct) {
+            this.visuallyDistinct = visuallyDistinct;
+            this.duplicatesOfDefined = duplicatesOfDefined;
+            this.potentiallyDistinct = potentiallyDistinct;
+        }
+
+        public List<Integer> getVisuallyDistinct() {
+            return visuallyDistinct;
+        }
+
+        public Map<Integer, List<Integer>> getDuplicatesOfDefined() {
+            return duplicatesOfDefined;
+        }
+
+        public List<Integer> getPotentiallyDistinct() {
+            return potentiallyDistinct;
+        }
+
+        public boolean isEmpty() {
+            return visuallyDistinct.isEmpty() && duplicatesOfDefined.isEmpty() && potentiallyDistinct.isEmpty();
+        }
     }
 }

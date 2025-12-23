@@ -1,9 +1,7 @@
 package eclipse.euphoriacompanion.report;
 
 import eclipse.euphoriacompanion.EuphoriaCompanion;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.entity.EntityList;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -14,6 +12,7 @@ import java.util.*;
 
 /**
  * Generates a list of all entities sorted by mod namespace.
+ * Adapted for Minecraft 1.7.10 EntityList system.
  */
 public class EntityListGenerator {
 
@@ -29,35 +28,24 @@ public class EntityListGenerator {
 
         Files.createDirectories(outputPath.getParent());
 
-        // Group entities by namespace (mod)
-        Map<String, List<String>> entitiesByMod = new TreeMap<>();
-
-        for (EntityType<?> entityType : BuiltInRegistries.ENTITY_TYPE) {
-            Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
-
-            String namespace = id.getNamespace();
-            String entityName = id.toString();
-
-            entitiesByMod.computeIfAbsent(namespace, _ -> new ArrayList<>())
-                    .add(entityName);
-        }
+        Map<String, List<String>> entitiesByMod = getStringListMap();
 
         EuphoriaCompanion.LOGGER.info("Found {} mods with entities", entitiesByMod.size());
 
         // Write to temporary file first (atomic write)
         Path tempPath = outputPath.getParent().resolve(outputPath.getFileName() + ".tmp");
 
+        int totalEntities;
         try (BufferedWriter writer = Files.newBufferedWriter(tempPath)) {
             writer.write("=== ENTITY LIST ===\n");
             writer.write("All entities registered in the game, sorted by mod.\n\n");
 
-            int totalEntities = 0;
+            totalEntities = 0;
 
             for (Map.Entry<String, List<String>> entry : entitiesByMod.entrySet()) {
                 String modName = entry.getKey();
                 List<String> entities = entry.getValue();
 
-                // Sort entities alphabetically
                 Collections.sort(entities);
 
                 totalEntities += entities.size();
@@ -79,7 +67,31 @@ public class EntityListGenerator {
         // Atomic rename - only appears as complete file
         Files.move(tempPath, outputPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 
-        EuphoriaCompanion.LOGGER.info("Generated entity list with {} total entities at {}",
-            entitiesByMod.values().stream().mapToInt(List::size).sum(), outputPath);
+        EuphoriaCompanion.LOGGER.info("Generated entity list with {} total entities at {}", totalEntities, outputPath);
+    }
+
+    private static Map<String, List<String>> getStringListMap() {
+        Map<String, List<String>> entitiesByMod = new TreeMap<>();
+
+        // In 1.7.10, EntityList.stringToClassMapping contains all registered entities
+        for (Object entityNameObj : EntityList.stringToClassMapping.keySet()) {
+            if (!(entityNameObj instanceof String)) {
+                continue;
+            }
+
+            String entityName = (String) entityNameObj;
+
+            // Format in 1.7.10 is either "EntityName" or "modid.EntityName"
+            String namespace = "minecraft";
+            if (entityName.contains(".")) {
+                String[] parts = entityName.split("\\.", 2);
+                namespace = parts[0];
+            }
+
+            List<String> entitiesForMod = entitiesByMod.computeIfAbsent(namespace, k -> new ArrayList<>());
+
+            entitiesForMod.add(entityName);
+        }
+        return entitiesByMod;
     }
 }

@@ -5,16 +5,19 @@ import eclipse.euphoriacompanion.config.ModConfig;
 import eclipse.euphoriacompanion.report.AnalysisReport;
 import eclipse.euphoriacompanion.report.ReportGenerator;
 import eclipse.euphoriacompanion.util.MinecraftVersionUtil;
-import net.fabricmc.loader.api.FabricLoader;
 
+import java.io.File;
 import java.io.IOException;
-import java.nio.file.*;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Initiates the analysis of all shaderpacks in the shaderpacks directory.
+ * Adapted for Forge 1.7.10.
  */
 public class ShaderpackAnalysisInitiator {
     private static final AtomicBoolean isProcessing = new AtomicBoolean(false);
@@ -32,18 +35,14 @@ public class ShaderpackAnalysisInitiator {
         try {
             EuphoriaCompanion.LOGGER.info("Starting shader analysis...");
 
-            // Get config
             ModConfig config = ModConfig.getInstance();
 
-            // Get current MC version
             int mcVersion = MinecraftVersionUtil.getCurrentMCVersionAsInt();
             EuphoriaCompanion.LOGGER.info("Current Minecraft version: {}", mcVersion);
 
-            // Get shaderpacks directory
-            Path gameDir = FabricLoader.getInstance().getGameDir();
-            Path shaderpacksDir = gameDir.resolve("shaderpacks");
+            File gameDir = new File(".");
+            Path shaderpacksDir = gameDir.toPath().resolve("shaderpacks");
 
-            // Create shaderpacks directory if it doesn't exist (idempotent - safe to call even if exists)
             try {
                 Files.createDirectories(shaderpacksDir);
             } catch (IOException e) {
@@ -51,7 +50,6 @@ public class ShaderpackAnalysisInitiator {
                 return;
             }
 
-            // Find all shaderpacks
             List<Path> shaderpackPaths = findShaderpacks(shaderpacksDir);
 
             if (shaderpackPaths.isEmpty()) {
@@ -59,15 +57,11 @@ public class ShaderpackAnalysisInitiator {
                 return;
             }
 
-            EuphoriaCompanion.LOGGER.info("Found {} shaderpacks: {}",
-                shaderpackPaths.size(),
-                getShaderpackNames(shaderpackPaths));
+            EuphoriaCompanion.LOGGER.info("Found {} shaderpacks: {}", shaderpackPaths.size(), getShaderpackNames(shaderpackPaths));
 
-            // Create analyzer
             ShaderAnalyzer analyzer = new ShaderAnalyzer(config, mcVersion);
 
-            // Create output directory (idempotent - safe to call even if exists)
-            Path logsDir = gameDir.resolve("logs/euphoriacompanion");
+            Path logsDir = gameDir.toPath().resolve("logs/euphoriacompanion");
             try {
                 Files.createDirectories(logsDir);
             } catch (IOException e) {
@@ -75,33 +69,27 @@ public class ShaderpackAnalysisInitiator {
                 return;
             }
 
-            // Process each shaderpack
             for (Path shaderpackPath : shaderpackPaths) {
                 try {
                     String shaderpackName = shaderpackPath.getFileName().toString();
 
-                    // Analyze
                     AnalysisReport report = analyzer.analyze(shaderpackPath);
 
-                    // Generate report file
                     String reportFileName = shaderpackName
-                        .replace(".zip", "")
-                        .replaceAll("[^a-zA-Z0-9._-]", "_")
-                        + "_analysis.txt";
+                            .replace(".zip", "")
+                            .replaceAll("[^a-zA-Z0-9._-]", "_")
+                            + "_analysis.txt";
 
                     Path reportPath = logsDir.resolve(reportFileName);
                     ReportGenerator.generateReport(report, reportPath);
 
-                    EuphoriaCompanion.LOGGER.info("Analysis complete. Report saved to logs/euphoriacompanion/{}",
-                        reportFileName);
+                    EuphoriaCompanion.LOGGER.info("Analysis complete. Report saved to logs/euphoriacompanion/{}", reportFileName);
 
                 } catch (IOException e) {
-                    EuphoriaCompanion.LOGGER.error("Failed to analyze shaderpack: {}",
-                        shaderpackPath.getFileName(), e);
+                    EuphoriaCompanion.LOGGER.error("Failed to analyze shaderpack: {}", shaderpackPath.getFileName(), e);
                 }
             }
 
-            // Generate entity list if enabled
             if (config.generateEntityList) {
                 try {
                     Path entityListPath = logsDir.resolve("entity_list.txt");
@@ -129,9 +117,7 @@ public class ShaderpackAnalysisInitiator {
 
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(shaderpacksDir)) {
             for (Path path : stream) {
-                // Include directories and ZIP files
                 if (Files.isDirectory(path)) {
-                    // Check if it has a shaders/block.properties file
                     if (Files.exists(path.resolve("shaders/block.properties"))) {
                         shaderpacks.add(path);
                     }

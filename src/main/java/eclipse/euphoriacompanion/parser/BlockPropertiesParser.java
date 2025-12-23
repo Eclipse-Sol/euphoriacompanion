@@ -1,8 +1,8 @@
 package eclipse.euphoriacompanion.parser;
 
+import cpw.mods.fml.common.Loader;
 import eclipse.euphoriacompanion.EuphoriaCompanion;
 import eclipse.euphoriacompanion.config.ModConfig;
-import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,86 +12,28 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Parses block.properties files with support for conditional directives,
- * tag definitions, and property assignments.
- */
 public class BlockPropertiesParser {
     private static final Pattern IF_PATTERN = Pattern.compile("#if\\s+(\\w+)\\s*([!=<>]+)\\s*(\\d+)");
-    private static final Pattern DEFINE_PATTERN = Pattern.compile("#define\\s+(\\w+)\\s+(.+)");
 
-    // Parsed data
     private final Map<String, Integer> blockToProperty = new HashMap<>();
-    private final Map<String, String> blockToRenderLayer = new HashMap<>();
-    private final Map<String, String> tagDefinitions = new LinkedHashMap<>();  // Preserve insertion order for first-assignment-wins
-    private final Map<String, Integer> tagToProperty = new LinkedHashMap<>();  // Preserve insertion order for first-assignment-wins
     private final Map<String, List<Integer>> duplicateBlocks = new HashMap<>();
-    private final ModConfig config;
     private final int currentMCVersion;
-    private boolean irisLoaded = false;
-    private final boolean oculusLoaded;
-    private final int oculusVersion;
-    private final int irisTagSupport;
+    private final boolean angelicaLoaded;
 
     public BlockPropertiesParser(ModConfig config, int currentMCVersion) {
-        this.config = config;
         this.currentMCVersion = currentMCVersion;
-        boolean euphoriaPatchesEnabled = config.detectEuphoriaPatchesSupport();
+        boolean euphoriaPatcherEnabled = config.detectEuphoriaPatcherSupport();
 
-        // IRIS_TAG_SUPPORT variable (0 = disabled, 2 = enabled for Iris 1.8+)
-        this.irisTagSupport = config.isTagSupportEnabled() ? 2 : 0;
-
-        // Euphoria Companion defines (only available with Euphoria Patches 1.7.8+)
-        if (euphoriaPatchesEnabled) {
-            this.oculusLoaded = FabricLoader.getInstance().isModLoaded("oculus");
-            if (!oculusLoaded) {
-                this.irisLoaded = FabricLoader.getInstance().isModLoaded("iris");
-            }
-            this.oculusVersion = getOculusVersionInt();
-            EuphoriaCompanion.LOGGER.info("Euphoria Companion defines: EUPHORIA_PATCHES_IRIS={}, EUPHORIA_PATCHES_OCULUS={}, EUPHORIA_PATCHES_OCULUS_VERSION={}",
-                irisLoaded, oculusLoaded, oculusVersion);
+        // Requires Euphoria Patcher 1.7.8+ to expose defines to shaderpack authors
+        if (euphoriaPatcherEnabled) {
+            this.angelicaLoaded = Loader.isModLoaded("angelica");
+            EuphoriaCompanion.LOGGER.info("Euphoria Companion defines: EUPHORIA_PATCHES_ANGELICA={}", angelicaLoaded);
         } else {
-            this.irisLoaded = false;
-            this.oculusLoaded = false;
-            this.oculusVersion = 0;
-            EuphoriaCompanion.LOGGER.info("Euphoria Patches not detected, Euphoria Companion defines disabled");
+            this.angelicaLoaded = false;
+            EuphoriaCompanion.LOGGER.info("Euphoria Patcher not detected, Euphoria Companion defines disabled");
         }
-
-        EuphoriaCompanion.LOGGER.info("IRIS_TAG_SUPPORT = {}", irisTagSupport);
     }
 
-    /**
-     * Gets Oculus version as integer (for EUPHORIA_PATCHES_OCULUS_VERSION define)
-     * Returns version in format: major*10000 + minor*100 + patch
-     * e.g., 1.7.0 -> 10700
-     */
-    private int getOculusVersionInt() {
-        return FabricLoader.getInstance().getModContainer("oculus")
-            .map(modContainer -> {
-                String version = modContainer.getMetadata().getVersion().getFriendlyString();
-
-                // Parse version string (e.g., "1.7.0", "1.7.0+mc1.21")
-                try {
-                    String[] parts = version.split("[.+]");
-                    if (parts.length >= 3) {
-                        int major = Integer.parseInt(parts[0]);
-                        int minor = Integer.parseInt(parts[1]);
-                        int patch = Integer.parseInt(parts[2]);
-
-                        return major * 10000 + minor * 100 + patch;
-                    }
-                } catch (NumberFormatException e) {
-                    EuphoriaCompanion.LOGGER.warn("Failed to parse Oculus version: {}", version);
-                }
-
-                return 0;
-            })
-            .orElse(0);
-    }
-
-    /**
-     * Parses a block.properties file
-     */
     public void parse(Path propertiesFile) throws IOException {
         Deque<ConditionalContext> conditionalStack = new ArrayDeque<>();
 
@@ -101,97 +43,78 @@ public class BlockPropertiesParser {
 
             try {
 
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                line = line.trim();
+                while ((line = reader.readLine()) != null) {
+                    lineNumber++;
+                    line = line.trim();
 
-                // Handle line continuation (backslash at end)
-                if (line.endsWith("\\")) {
-                    StringBuilder continuedLine = new StringBuilder();
+                    if (line.endsWith("\\")) {
+                        StringBuilder continuedLine = new StringBuilder();
 
-                    // Keep reading and concatenating lines until we find one without trailing backslash
-                    while (line.endsWith("\\")) {
-                        // Remove the trailing backslash
-                        String withoutBackslash = line.substring(0, line.length() - 1).trim();
+                        while (line.endsWith("\\")) {
+                            String withoutBackslash = line.substring(0, line.length() - 1).trim();
 
-                        // Only append non-empty content (skip lines that are just "\")
-                        if (!withoutBackslash.isEmpty()) {
-                            if (!continuedLine.isEmpty()) {
+                            if (!withoutBackslash.isEmpty()) {
+                                if (continuedLine.length() > 0) {
+                                    continuedLine.append(" ");
+                                }
+                                continuedLine.append(withoutBackslash);
+                            }
+
+                            line = reader.readLine();
+                            if (line == null) {
+                                break;
+                            }
+                            lineNumber++;
+                            line = line.trim();
+                        }
+
+                        if (line != null && !line.isEmpty()) {
+                            if (continuedLine.length() > 0) {
                                 continuedLine.append(" ");
                             }
-                            continuedLine.append(withoutBackslash);
+                            continuedLine.append(line);
                         }
 
-                        // Read next line
-                        line = reader.readLine();
-                        if (line == null) {
-                            break; // End of file
-                        }
-                        lineNumber++;
-                        line = line.trim();
+                        line = continuedLine.toString();
                     }
 
-                    // Append the final line (without backslash)
-                    if (line != null && !line.isEmpty()) {
-                        if (!continuedLine.isEmpty()) {
-                            continuedLine.append(" ");
-                        }
-                        continuedLine.append(line);
+                    // Process conditionals even in inactive blocks to maintain stack depth
+                    if (line.startsWith("#ifdef ") || line.startsWith("#ifndef ")) {
+                        handleIfdefDirective(line, conditionalStack, lineNumber);
+                        continue;
+                    } else if (line.startsWith("#if ")) {
+                        handleIfDirective(line, conditionalStack, lineNumber);
+                        continue;
+                    } else if (line.startsWith("#else")) {
+                        handleElseDirective(conditionalStack, lineNumber);
+                        continue;
+                    } else if (line.startsWith("#endif")) {
+                        handleEndifDirective(conditionalStack, lineNumber);
+                        continue;
                     }
 
-                    // Use the merged line for processing
-                    line = continuedLine.toString();
-                    // Keep lineNumber at current position (end of continuation), not startLine
-                }
+                    if (!isActiveContext(conditionalStack)) {
+                        continue;
+                    }
 
-                // Handle conditional directives (ALWAYS process these, even in inactive blocks)
-                if (line.startsWith("#ifdef ") || line.startsWith("#ifndef ")) {
-                    handleIfdefDirective(line, conditionalStack, lineNumber);
-                    continue;
-                } else if (line.startsWith("#if ")) {
-                    handleIfDirective(line, conditionalStack, lineNumber);
-                    continue;
-                } else if (line.startsWith("#else")) {
-                    handleElseDirective(conditionalStack, lineNumber);
-                    continue;
-                } else if (line.startsWith("#endif")) {
-                    handleEndifDirective(conditionalStack, lineNumber);
-                    continue;
-                }
+                    if (line.isEmpty() || line.startsWith("#")) {
+                        continue;
+                    }
 
-                // Skip ALL other processing if inside an inactive conditional block
-                if (!isActiveContext(conditionalStack)) {
-                    continue;
+                    if (line.contains("=")) {
+                        handlePropertyAssignment(line, lineNumber);
+                    }
                 }
-
-                // Skip empty lines and comments
-                if (line.isEmpty() || (line.startsWith("#") && !line.startsWith("#define"))) {
-                    continue;
-                }
-
-                // Handle #define statements (tag definitions)
-                if (line.startsWith("#define") && config.isTagSupportEnabled()) {
-                    handleDefineDirective(line, lineNumber);
-                    continue;
-                }
-
-                // Handle property assignments
-                if (line.contains("=")) {
-                    handlePropertyAssignment(line, lineNumber);
-                }
-            }
             } catch (IOException e) {
                 throw new IOException("Error reading block.properties at line " + lineNumber, e);
             }
         }
 
-        // Check for unmatched #if directives
         if (!conditionalStack.isEmpty()) {
             EuphoriaCompanion.LOGGER.warn("Parsing ended with {} unmatched #if directive(s)", conditionalStack.size());
         }
 
-        EuphoriaCompanion.LOGGER.info("Parsed {} direct block assignments and {} tag definitions",
-            blockToProperty.size(), tagDefinitions.size());
+        EuphoriaCompanion.LOGGER.info("Parsed {} direct block assignments", blockToProperty.size());
     }
 
     /**
@@ -203,22 +126,18 @@ public class BlockPropertiesParser {
         // Extract the expression after "#if "
         String expression = line.substring(4).trim();
 
-        // Check if we're already in an inactive context
         boolean parentActive = isActiveContext(stack);
 
-        // Try to evaluate the expression
         Boolean result = evaluateExpression(expression);
 
         if (result != null) {
-            // Successfully evaluated
             boolean active = parentActive && result;
             stack.push(new ConditionalContext(true, active));
             EuphoriaCompanion.LOGGER.debug("Line {}: #if evaluated to {} -> {} (stack depth after: {})",
-                lineNumber, result, active, stack.size());
+                    lineNumber, result, active, stack.size());
         } else {
-            // Could not parse/evaluate - mark as unsupported
             EuphoriaCompanion.LOGGER.warn("Line {}: Unsupported #if expression: {} (stack depth: {})",
-                lineNumber, expression, stack.size());
+                    lineNumber, expression, stack.size());
             stack.push(new ConditionalContext(false, false));
         }
     }
@@ -231,7 +150,6 @@ public class BlockPropertiesParser {
         try {
             EuphoriaCompanion.LOGGER.debug("Evaluating expression: [{}]", expression);
 
-            // Handle OR (||) - lowest precedence
             if (expression.contains("||")) {
                 String[] orParts = expression.split("\\|\\|");
                 EuphoriaCompanion.LOGGER.debug("Split on OR, {} parts", orParts.length);
@@ -239,13 +157,12 @@ public class BlockPropertiesParser {
                     EuphoriaCompanion.LOGGER.debug("Evaluating OR part: [{}]", part.trim());
                     Boolean result = evaluateExpression(part.trim());
                     EuphoriaCompanion.LOGGER.debug("OR part result: {}", result);
-                    if (result == null) return null; // Can't evaluate
-                    if (result) return true; // Short-circuit OR
+                    if (result == null) return null;
+                    if (result) return true;
                 }
                 return false;
             }
 
-            // Handle AND (&&) - higher precedence
             if (expression.contains("&&")) {
                 String[] andParts = expression.split("&&");
                 EuphoriaCompanion.LOGGER.debug("Split on AND, {} parts", andParts.length);
@@ -253,13 +170,12 @@ public class BlockPropertiesParser {
                     EuphoriaCompanion.LOGGER.debug("Evaluating AND part: [{}]", part.trim());
                     Boolean result = evaluateExpression(part.trim());
                     EuphoriaCompanion.LOGGER.debug("AND part result: {}", result);
-                    if (result == null) return null; // Can't evaluate
-                    if (!result) return false; // Short-circuit AND
+                    if (result == null) return null;
+                    if (!result) return false;
                 }
                 return true;
             }
 
-            // Handle "defined SYMBOL"
             if (expression.startsWith("defined ")) {
                 String symbol = expression.substring(8).trim();
                 boolean defined = isSymbolDefined(symbol);
@@ -267,33 +183,19 @@ public class BlockPropertiesParser {
                 return defined;
             }
 
-            // Handle simple comparisons (MC_VERSION >= 12100, etc.)
             Matcher matcher = IF_PATTERN.matcher("#if " + expression);
             if (matcher.matches()) {
                 String variable = matcher.group(1);
                 String operator = matcher.group(2);
                 int value = Integer.parseInt(matcher.group(3));
 
-                switch (variable) {
-                    case "MC_VERSION" -> {
-                        boolean result = evaluateCondition(currentMCVersion, operator, value);
-                        EuphoriaCompanion.LOGGER.debug("MC_VERSION {} {} -> {}", operator, value, result);
-                        return result;
-                    }
-                    case "EUPHORIA_PATCHES_OCULUS_VERSION" -> {
-                        boolean result = evaluateCondition(oculusVersion, operator, value);
-                        EuphoriaCompanion.LOGGER.debug("EUPHORIA_PATCHES_OCULUS_VERSION {} {} -> {}", operator, value, result);
-                        return result;
-                    }
-                    case "IRIS_TAG_SUPPORT" -> {
-                        boolean result = evaluateCondition(irisTagSupport, operator, value);
-                        EuphoriaCompanion.LOGGER.debug("IRIS_TAG_SUPPORT ({}) {} {} -> {}", irisTagSupport, operator, value, result);
-                        return result;
-                    }
+                if (variable.equals("MC_VERSION")) {
+                    boolean result = evaluateCondition(currentMCVersion, operator, value);
+                    EuphoriaCompanion.LOGGER.debug("MC_VERSION {} {} -> {}", operator, value, result);
+                    return result;
                 }
             }
 
-            // Couldn't parse this expression
             EuphoriaCompanion.LOGGER.debug("Could not parse expression: [{}]", expression);
             return null;
 
@@ -307,11 +209,11 @@ public class BlockPropertiesParser {
      * Checks if a symbol is defined
      */
     private boolean isSymbolDefined(String symbol) {
-        return switch (symbol) {
-            case "EUPHORIA_PATCHES_IRIS" -> irisLoaded;
-            case "EUPHORIA_PATCHES_OCULUS" -> oculusLoaded;
-            default -> false; // Unknown symbols are not defined
-        };
+        if (symbol.equals("EUPHORIA_PATCHES_ANGELICA")) {
+            return angelicaLoaded;
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -326,32 +228,24 @@ public class BlockPropertiesParser {
         // Extract the symbol name after #ifdef/#ifndef
         String symbol = line.substring(isIfndef ? 8 : 7).trim();
 
-        // Check if we're already in an inactive context
         boolean parentActive = isActiveContext(stack);
 
-        // Check for Euphoria Companion defines (only available with Euphoria Patches 1.7.8+)
         boolean symbolDefined = false;
         boolean supported = false;
 
-        if (symbol.equals("EUPHORIA_PATCHES_IRIS")) {
-            symbolDefined = irisLoaded;
+        if (symbol.equals("EUPHORIA_PATCHES_ANGELICA")) {
+            symbolDefined = angelicaLoaded;
             supported = true;
-            EuphoriaCompanion.LOGGER.debug("Line {}: Checking EUPHORIA_PATCHES_IRIS -> {}", lineNumber, symbolDefined);
-        } else if (symbol.equals("EUPHORIA_PATCHES_OCULUS")) {
-            symbolDefined = oculusLoaded;
-            supported = true;
-            EuphoriaCompanion.LOGGER.debug("Line {}: Checking EUPHORIA_PATCHES_OCULUS -> {}", lineNumber, symbolDefined);
+            EuphoriaCompanion.LOGGER.debug("Line {}: Checking EUPHORIA_PATCHES_ANGELICA -> {}", lineNumber, symbolDefined);
         }
 
-        // #ifdef: active if symbol IS defined
-        // #ifndef: active if symbol IS NOT defined
         boolean condition = isIfndef != symbolDefined;
         boolean active = parentActive && condition;
 
         stack.push(new ConditionalContext(supported, active));
 
         EuphoriaCompanion.LOGGER.debug("Line {}: {} {} -> {} (stack depth after: {})",
-            lineNumber, directiveName, symbol, active, stack.size());
+                lineNumber, directiveName, symbol, active, stack.size());
     }
 
     /**
@@ -371,24 +265,19 @@ public class BlockPropertiesParser {
         // Check if parent context is active
         boolean elseActive = isElseActive(stack, current);
 
-        stack.push(new ConditionalContext(current.supported(), elseActive));
+        stack.push(new ConditionalContext(current.isSupported(), elseActive));
 
         EuphoriaCompanion.LOGGER.debug("Line {}: #else -> {} (supported: {}, stack depth after: {})",
-            lineNumber, elseActive, current.supported(), stack.size());
+                lineNumber, elseActive, current.isSupported(), stack.size());
     }
 
     private boolean isElseActive(Deque<ConditionalContext> stack, ConditionalContext current) {
         boolean parentActive = isActiveContext(stack);
 
-        // #else logic:
-        // - If the #if was supported and evaluated: flip the condition
-        // - If the #if was unsupported (couldn't parse): activate #else as fallback
         boolean elseActive;
-        if (current.supported()) {
-            // Supported #if: activate #else only if #if was false
-            elseActive = parentActive && !current.active();
+        if (current.isSupported()) {
+            elseActive = parentActive && !current.isActive();
         } else {
-            // Unsupported #if: activate #else as fallback (assume we want the #else block)
             elseActive = parentActive;
         }
         return elseActive;
@@ -409,22 +298,7 @@ public class BlockPropertiesParser {
     }
 
     /**
-     * Handles #define directives for tag definitions
-     */
-    private void handleDefineDirective(String line, int lineNumber) {
-        Matcher matcher = DEFINE_PATTERN.matcher(line);
-        if (matcher.matches()) {
-            String identifier = matcher.group(1);
-            String tagName = matcher.group(2);
-            tagDefinitions.put(identifier, tagName);
-            EuphoriaCompanion.LOGGER.debug("Line {}: Defined tag {} = %{}", lineNumber, identifier, tagName);
-        } else {
-            EuphoriaCompanion.LOGGER.warn("Line {}: Invalid #define directive: {}", lineNumber, line);
-        }
-    }
-
-    /**
-     * Handles property assignments (block.XX=..., layer.XX=..., etc.)
+     * Handles property assignments (block.XX=...)
      */
     private void handlePropertyAssignment(String line, int lineNumber) {
         String[] parts = line.split("=", 2);
@@ -435,13 +309,8 @@ public class BlockPropertiesParser {
         String key = parts[0].trim();
         String value = parts[1].trim();
 
-        // Handle block property assignments (block.XX=...)
         if (key.startsWith("block.")) {
             handleBlockProperty(key, value, lineNumber);
-        }
-        // Handle render layer assignments (layer.translucent=...)
-        else if (key.startsWith("layer.")) {
-            handleRenderLayer(key, value);
         }
     }
 
@@ -450,7 +319,7 @@ public class BlockPropertiesParser {
      */
     private void handleBlockProperty(String key, String value, int lineNumber) {
         // Extract property ID from "block.XX"
-        String propertyIdStr = key.substring(6); // Remove "block." prefix
+        String propertyIdStr = key.substring(6);
         int propertyId;
         try {
             propertyId = Integer.parseInt(propertyIdStr);
@@ -467,38 +336,33 @@ public class BlockPropertiesParser {
                 continue;
             }
 
-            // Check if this is a tag reference
-            if (tagDefinitions.containsKey(blockId)) {
-                // Tag-based assignment
-                tagToProperty.put(blockId, propertyId);
-                EuphoriaCompanion.LOGGER.debug("Line {}: Tag {} -> property {}", lineNumber, blockId, propertyId);
-            } else {
-                // Direct block assignment
-                String normalizedId = normalizeBlockId(blockId);
+            // Expand comma-separated metadata values (e.g., "stone:0,1,2" -> ["stone:0", "stone:1", "stone:2"])
+            List<String> expandedBlockIds = expandCommaSeparatedMetadata(blockId);
+
+            for (String expandedId : expandedBlockIds) {
+                String normalizedId = normalizeBlockId(expandedId);
                 if (normalizedId == null) {
-                    continue; // Skip invalid block ID
+                    continue;
                 }
 
-                // Check for duplicates
                 if (blockToProperty.containsKey(normalizedId)) {
                     int existingProperty = blockToProperty.get(normalizedId);
 
-                    // Track this as a duplicate
-                    duplicateBlocks.computeIfAbsent(normalizedId, _ -> new ArrayList<>());
+                    if (!duplicateBlocks.containsKey(normalizedId)) {
+                        duplicateBlocks.put(normalizedId, new ArrayList<>());
+                    }
                     List<Integer> properties = duplicateBlocks.get(normalizedId);
 
-                    // Add the existing property if not already in the list
                     if (!properties.contains(existingProperty)) {
                         properties.add(existingProperty);
                     }
 
-                    // Add the new property
                     if (!properties.contains(propertyId)) {
                         properties.add(propertyId);
                     }
 
                     EuphoriaCompanion.LOGGER.debug("Line {}: Duplicate block {} already mapped to block.{}, now also to block.{}",
-                        lineNumber, normalizedId, existingProperty, propertyId);
+                            lineNumber, normalizedId, existingProperty, propertyId);
                 }
 
                 blockToProperty.put(normalizedId, propertyId);
@@ -507,25 +371,58 @@ public class BlockPropertiesParser {
     }
 
     /**
-     * Handles render layer assignments
+     * Expands comma-separated metadata values in a block ID
+     * Examples:
+     * "minecraft:stone:0,1,2" -> ["minecraft:stone:0", "minecraft:stone:1", "minecraft:stone:2"]
+     * "stone:0,1,2" -> ["stone:0", "stone:1", "stone:2"]
+     * "stone" -> ["stone"] (no metadata, return as-is)
      */
-    private void handleRenderLayer(String key, String value) {
-        // Extract layer name from "layer.XX"
-        String layerName = key.substring(6); // Remove "layer." prefix
+    private List<String> expandCommaSeparatedMetadata(String blockId) {
+        List<String> result = new ArrayList<>();
 
-        // Parse block IDs from value
-        String[] blockIds = value.split("\\s+");
-        for (String blockId : blockIds) {
-            blockId = blockId.trim();
-            if (blockId.isEmpty()) {
-                continue;
-            }
+        int lastColonIndex = blockId.lastIndexOf(':');
 
-            String normalizedId = normalizeBlockId(blockId);
-            if (normalizedId != null) {
-                blockToRenderLayer.put(normalizedId, layerName);
+        if (lastColonIndex == -1) {
+            result.add(blockId);
+            return result;
+        }
+
+        String afterLastColon = blockId.substring(lastColonIndex + 1);
+
+        if (!afterLastColon.contains(",")) {
+            result.add(blockId);
+            return result;
+        }
+
+        if (!afterLastColon.matches("[0-9,]+")) {
+            result.add(blockId);
+            return result;
+        }
+
+        String[] metadataValues = afterLastColon.split(",");
+        String baseBlockId = blockId.substring(0, lastColonIndex);
+
+        for (String metadata : metadataValues) {
+            metadata = metadata.trim();
+            if (!metadata.isEmpty()) {
+                try {
+                    int metaInt = Integer.parseInt(metadata);
+                    if (metaInt >= 0 && metaInt <= 15) {
+                        result.add(baseBlockId + ":" + metaInt);
+                    } else {
+                        EuphoriaCompanion.LOGGER.warn("Invalid metadata value (must be 0-15): {}", metadata);
+                    }
+                } catch (NumberFormatException e) {
+                    EuphoriaCompanion.LOGGER.warn("Invalid metadata value: {}", metadata);
+                }
             }
         }
+
+        if (result.isEmpty()) {
+            result.add(blockId);
+        }
+
+        return result;
     }
 
     /**
@@ -575,7 +472,7 @@ public class BlockPropertiesParser {
      */
     private boolean isActiveContext(Deque<ConditionalContext> stack) {
         for (ConditionalContext context : stack) {
-            if (!context.active) {
+            if (!context.isActive()) {
                 return false;
             }
         }
@@ -586,35 +483,28 @@ public class BlockPropertiesParser {
      * Evaluates a conditional expression
      */
     private boolean evaluateCondition(int left, String operator, int right) {
-        return switch (operator) {
-            case "==" -> left == right;
-            case "!=" -> left != right;
-            case "<" -> left < right;
-            case ">" -> left > right;
-            case "<=" -> left <= right;
-            case ">=" -> left >= right;
-            default -> {
+        switch (operator) {
+            case "==":
+                return left == right;
+            case "!=":
+                return left != right;
+            case "<":
+                return left < right;
+            case ">":
+                return left > right;
+            case "<=":
+                return left <= right;
+            case ">=":
+                return left >= right;
+            default:
                 EuphoriaCompanion.LOGGER.warn("Unknown operator: {}", operator);
-                yield false;
-            }
-        };
+                return false;
+        }
     }
 
     // Getters for parsed data
     public Map<String, Integer> getBlockToProperty() {
         return Collections.unmodifiableMap(blockToProperty);
-    }
-
-    public Map<String, String> getBlockToRenderLayer() {
-        return Collections.unmodifiableMap(blockToRenderLayer);
-    }
-
-    public Map<String, String> getTagDefinitions() {
-        return Collections.unmodifiableMap(tagDefinitions);
-    }
-
-    public Map<String, Integer> getTagToProperty() {
-        return Collections.unmodifiableMap(tagToProperty);
     }
 
     public Map<String, List<Integer>> getDuplicateBlocks() {
@@ -624,6 +514,21 @@ public class BlockPropertiesParser {
     /**
      * Represents a conditional context in the stack
      */
-    private record ConditionalContext(boolean supported, boolean active) {
+    private static class ConditionalContext {
+        private final boolean supported;
+        private final boolean active;
+
+        public ConditionalContext(boolean supported, boolean active) {
+            this.supported = supported;
+            this.active = active;
+        }
+
+        public boolean isSupported() {
+            return supported;
+        }
+
+        public boolean isActive() {
+            return active;
+        }
     }
 }
