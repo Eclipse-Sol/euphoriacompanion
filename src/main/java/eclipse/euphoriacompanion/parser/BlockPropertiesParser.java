@@ -3,6 +3,7 @@ package eclipse.euphoriacompanion.parser;
 import cpw.mods.fml.common.Loader;
 import eclipse.euphoriacompanion.EuphoriaCompanion;
 import eclipse.euphoriacompanion.config.ModConfig;
+import eclipse.euphoriacompanion.util.BlockIdFormatter;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -328,13 +329,16 @@ public class BlockPropertiesParser {
             return;
         }
 
-        // Parse block IDs from value
-        String[] blockIds = value.split("\\s+");
+        // Parse block IDs from value (respecting quoted strings)
+        List<String> blockIds = parseBlockIds(value);
         for (String blockId : blockIds) {
             blockId = blockId.trim();
             if (blockId.isEmpty()) {
                 continue;
             }
+
+            // Unescape quoted block IDs
+            blockId = BlockIdFormatter.unformatId(blockId);
 
             // Expand comma-separated metadata values (e.g., "stone:0,1,2" -> ["stone:0", "stone:1", "stone:2"])
             List<String> expandedBlockIds = expandCommaSeparatedMetadata(blockId);
@@ -368,6 +372,58 @@ public class BlockPropertiesParser {
                 blockToProperty.put(normalizedId, propertyId);
             }
         }
+    }
+
+    /**
+     * Parses block IDs from a value string, respecting quoted strings.
+     * Examples:
+     * "stone cobblestone dirt" -> ["stone", "cobblestone", "dirt"]
+     * "\"mod:block name\" stone" -> ["\"mod:block name\"", "stone"]
+     * "\"mod:path\\\\to\\\\block\" dirt" -> ["\"mod:path\\\\to\\\\block\"", "dirt"]
+     */
+    private List<String> parseBlockIds(String value) {
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+                continue;
+            }
+
+            if (c == '\\') {
+                current.append(c);
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"') {
+                current.append(c);
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (Character.isWhitespace(c) && !inQuotes) {
+                if (current.length() > 0) {
+                    result.add(current.toString());
+                    current = new StringBuilder();
+                }
+                continue;
+            }
+
+            current.append(c);
+        }
+
+        if (current.length() > 0) {
+            result.add(current.toString());
+        }
+
+        return result;
     }
 
     /**

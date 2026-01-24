@@ -1,6 +1,7 @@
 package eclipse.euphoriacompanion.report;
 
 import eclipse.euphoriacompanion.EuphoriaCompanion;
+import eclipse.euphoriacompanion.util.BlockIdFormatter;
 import net.minecraft.entity.EntityList;
 
 import java.io.BufferedWriter;
@@ -19,7 +20,7 @@ public class EntityListGenerator {
     /**
      * Generates and saves an entity list to the specified path
      */
-    public static void generateEntityList(Path outputPath) throws IOException {
+    public static void generateEntityList(Path outputPath, boolean quoteEntityIds) throws IOException {
         EuphoriaCompanion.LOGGER.info("Starting entity list generation...");
 
         if (outputPath.getParent() == null) {
@@ -54,7 +55,7 @@ public class EntityListGenerator {
                 writer.write(modName + " (" + entities.size() + " entities):\n\n");
 
                 for (String entity : entities) {
-                    writer.write(" " + entity + "\n");
+                    writer.write(" " + BlockIdFormatter.formatId(entity, quoteEntityIds) + "\n");
                 }
 
                 writer.write("\n");

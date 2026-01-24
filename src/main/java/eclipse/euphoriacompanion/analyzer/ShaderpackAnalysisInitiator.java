@@ -81,7 +81,7 @@ public class ShaderpackAnalysisInitiator {
                             + "_analysis.txt";
 
                     Path reportPath = logsDir.resolve(reportFileName);
-                    ReportGenerator.generateReport(report, reportPath);
+                    ReportGenerator.generateReport(report, reportPath, config.quoteBlockIds);
 
                     EuphoriaCompanion.LOGGER.info("Analysis complete. Report saved to logs/euphoriacompanion/{}", reportFileName);
 
@@ -93,7 +93,7 @@ public class ShaderpackAnalysisInitiator {
             if (config.generateEntityList) {
                 try {
                     Path entityListPath = logsDir.resolve("entity_list.txt");
-                    eclipse.euphoriacompanion.report.EntityListGenerator.generateEntityList(entityListPath);
+                    eclipse.euphoriacompanion.report.EntityListGenerator.generateEntityList(entityListPath, config.quoteBlockIds);
                     EuphoriaCompanion.LOGGER.info("Entity list saved to logs/euphoriacompanion/entity_list.txt");
                 } catch (IOException e) {
                     EuphoriaCompanion.LOGGER.error("Failed to generate entity list", e);

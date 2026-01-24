@@ -1,5 +1,7 @@
 package eclipse.euphoriacompanion.report;
 
+import eclipse.euphoriacompanion.util.BlockIdFormatter;
+
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -46,7 +48,7 @@ public class ReportGenerator {
     /**
      * Generates and saves a report to the specified path.
      */
-    public static void generateReport(AnalysisReport report, Path outputPath) throws IOException {
+    public static void generateReport(AnalysisReport report, Path outputPath, boolean quoteBlockIds) throws IOException {
         if (outputPath.getParent() == null) {
             throw new IOException("Output path has no parent directory: " + outputPath);
         }
@@ -57,9 +59,9 @@ public class ReportGenerator {
 
         try (BufferedWriter writer = Files.newBufferedWriter(tempPath)) {
             writeHeader(writer, report);
-            writeMissingBlocks(writer, report);
-            writeIncompleteBlockStates(writer, report);
-            writeDuplicateDefinitions(writer, report);
+            writeMissingBlocks(writer, report, quoteBlockIds);
+            writeIncompleteBlockStates(writer, report, quoteBlockIds);
+            writeDuplicateDefinitions(writer, report, quoteBlockIds);
         }
 
         // Atomic rename - only appears as complete file
@@ -89,7 +91,7 @@ public class ReportGenerator {
     /**
      * Writes the missing blocks section
      */
-    private static void writeMissingBlocks(BufferedWriter writer, AnalysisReport report) throws IOException {
+    private static void writeMissingBlocks(BufferedWriter writer, AnalysisReport report, boolean quoteBlockIds) throws IOException {
         writer.write("----------------------------------------\n");
         writer.write("MISSING BLOCKS BY MOD:\n\n");
 
@@ -118,9 +120,9 @@ public class ReportGenerator {
                 writer.write("  " + category + " (" + blocks.size() + "):\n");
 
                 Collections.sort(blocks);
-                
+
                 for (String block : blocks) {
-                    writer.write(" " + block + "\n");
+                    writer.write(" " + BlockIdFormatter.formatId(block, quoteBlockIds) + "\n");
                 }
 
                 writer.write("\n");
@@ -131,7 +133,7 @@ public class ReportGenerator {
     /**
      * Writes the missing meta values section
      */
-    private static void writeIncompleteBlockStates(BufferedWriter writer, AnalysisReport report)
+    private static void writeIncompleteBlockStates(BufferedWriter writer, AnalysisReport report, boolean quoteBlockIds)
             throws IOException {
         Map<String, Map<String, List<String>>> incompleteBlockStates = report.getIncompleteBlockStates();
 
@@ -153,7 +155,7 @@ public class ReportGenerator {
             String blockId = blockEntry.getKey();
             Map<String, List<String>> categoriesMap = blockEntry.getValue();
 
-            writer.write(blockId + ":\n");
+            writer.write(BlockIdFormatter.formatId(blockId, quoteBlockIds) + ":\n");
 
             // Sort categories for better readability
             List<Map.Entry<String, List<String>>> sortedCategories = sortMetadataCategories(categoriesMap);
@@ -183,7 +185,7 @@ public class ReportGenerator {
     /**
      * Writes the duplicate definitions section
      */
-    private static void writeDuplicateDefinitions(BufferedWriter writer, AnalysisReport report)
+    private static void writeDuplicateDefinitions(BufferedWriter writer, AnalysisReport report, boolean quoteBlockIds)
             throws IOException {
         Map<String, List<Integer>> duplicates = report.getDuplicateDefinitions();
 
@@ -213,7 +215,7 @@ public class ReportGenerator {
                 propertyIdsStr.append("block.").append(propertyIds.get(i));
             }
 
-            writer.write(blockState + " is defined multiple times:\n");
+            writer.write(BlockIdFormatter.formatId(blockState, quoteBlockIds) + " is defined multiple times:\n");
             writer.write("  Properties: " + propertyIdsStr + "\n\n");
         }
     }

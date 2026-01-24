@@ -24,6 +24,7 @@ public class ModConfig {
     public boolean checkFull = true;
     public boolean checkBlockEntity = true;
     public boolean generateEntityList = true;
+    public boolean quoteBlockIds = true;
 
     private Boolean cachedEuphoriaPatcherSupport = null;
 
@@ -98,6 +99,7 @@ public class ModConfig {
         checkFull = Boolean.parseBoolean(props.getProperty("checkFull", "true"));
         checkBlockEntity = Boolean.parseBoolean(props.getProperty("checkBlockEntity", "true"));
         generateEntityList = Boolean.parseBoolean(props.getProperty("generateEntityList", "false"));
+        quoteBlockIds = Boolean.parseBoolean(props.getProperty("quoteBlockIds", "true"));
     }
 
     public void save() {
@@ -114,6 +116,7 @@ public class ModConfig {
                 props.setProperty("checkFull", String.valueOf(checkFull));
                 props.setProperty("checkBlockEntity", String.valueOf(checkBlockEntity));
                 props.setProperty("generateEntityList", String.valueOf(generateEntityList));
+                props.setProperty("quoteBlockIds", String.valueOf(quoteBlockIds));
 
                 String header = "Euphoria Companion Configuration\n\n" +
                         "Scan mode for block state analysis\n" +
@@ -121,7 +124,9 @@ public class ModConfig {
                         "Validation and categorization options\n" +
                         "Note: Block entities may not all use entity rendering (gbuffers_entities)\n\n" +
                         "Generate entity list file\n" +
-                        "When enabled, generates a separate entity_list.txt file with all entities sorted by mod";
+                        "When enabled, generates a separate entity_list.txt file with all entities sorted by mod\n\n" +
+                        "Quote block and entity IDs\n" +
+                        "When enabled, IDs with spaces or special characters are quoted and escaped (e.g., \"mod:block name\")";
 
                 props.store(writer, header);
 
