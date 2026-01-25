@@ -24,6 +24,7 @@ public class ModConfig {
     public boolean checkFull = true;
     public boolean checkBlockEntity = true;
     public boolean generateEntityList = true;
+    public boolean generateUnregisteredEntityScan = false;
     public boolean quoteBlockIds = true;
 
     private Boolean cachedEuphoriaPatcherSupport = null;
@@ -99,6 +100,7 @@ public class ModConfig {
         checkFull = Boolean.parseBoolean(props.getProperty("checkFull", "true"));
         checkBlockEntity = Boolean.parseBoolean(props.getProperty("checkBlockEntity", "true"));
         generateEntityList = Boolean.parseBoolean(props.getProperty("generateEntityList", "false"));
+        generateUnregisteredEntityScan = Boolean.parseBoolean(props.getProperty("generateUnregisteredEntityScan", "false"));
         quoteBlockIds = Boolean.parseBoolean(props.getProperty("quoteBlockIds", "true"));
     }
 
@@ -116,6 +118,7 @@ public class ModConfig {
                 props.setProperty("checkFull", String.valueOf(checkFull));
                 props.setProperty("checkBlockEntity", String.valueOf(checkBlockEntity));
                 props.setProperty("generateEntityList", String.valueOf(generateEntityList));
+                props.setProperty("generateUnregisteredEntityScan", String.valueOf(generateUnregisteredEntityScan));
                 props.setProperty("quoteBlockIds", String.valueOf(quoteBlockIds));
 
                 String header = "Euphoria Companion Configuration\n\n" +
@@ -125,6 +128,9 @@ public class ModConfig {
                         "Note: Block entities may not all use entity rendering (gbuffers_entities)\n\n" +
                         "Generate entity list file\n" +
                         "When enabled, generates a separate entity_list.txt file with all entities sorted by mod\n\n" +
+                        "Generate unregistered entity scan\n" +
+                        "When enabled, scans ALL Entity classes on classpath and shows only unregistered entities\n" +
+                        "Output: unregistered_entity_scan.txt (Warning: may be slow on large modpacks)\n\n" +
                         "Quote block and entity IDs\n" +
                         "When enabled, IDs with spaces or special characters are quoted and escaped (e.g., \"mod:block name\")";
 

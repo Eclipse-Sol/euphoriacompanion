@@ -100,6 +100,16 @@ public class ShaderpackAnalysisInitiator {
                 }
             }
 
+            if (config.generateUnregisteredEntityScan) {
+                try {
+                    Path unregisteredScanPath = logsDir.resolve("unregistered_entity_scan.txt");
+                    eclipse.euphoriacompanion.report.UnregisteredEntityScanner.generateUnregisteredReport(unregisteredScanPath, config.quoteBlockIds);
+                    EuphoriaCompanion.LOGGER.info("Unregistered entity scan saved to logs/euphoriacompanion/unregistered_entity_scan.txt");
+                } catch (IOException e) {
+                    EuphoriaCompanion.LOGGER.error("Failed to generate unregistered entity scan", e);
+                }
+            }
+
             EuphoriaCompanion.LOGGER.info("All shader analysis complete");
 
         } catch (Exception e) {
