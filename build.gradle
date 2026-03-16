@@ -20,6 +20,13 @@ java {
     withSourcesJar()
 }
 
+repositories {
+    maven {
+        name = 'GTNH Maven'
+        url = 'https://nexus.gtnewhorizons.com/repository/public/'
+    }
+}
+
 // RFG configuration
 minecraft {
     mcVersion.set(minecraft_version)
@@ -47,6 +54,9 @@ processResources {
 
 dependencies {
     // Forge will be added automatically by RFG
+
+    // NEI integration (optional)
+    compileOnly(rfg.deobf("com.github.GTNewHorizons:NotEnoughItems:2.6.50-GTNH:dev"))
 }
 
 // configure the maven publication

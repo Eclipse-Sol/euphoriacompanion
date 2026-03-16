@@ -52,6 +52,15 @@ public class EuphoriaCompanion {
         if (FMLCommonHandler.instance().getSide() == Side.CLIENT) {
             ClientEventHandler.registerKeyBinding();
             FMLCommonHandler.instance().bus().register(new ClientEventHandler());
+
+            // Initialize NEI integration if NEI is loaded
+            if (cpw.mods.fml.common.Loader.isModLoaded("NotEnoughItems")) {
+                try {
+                    eclipse.euphoriacompanion.integration.NEIIntegration.init();
+                } catch (Exception e) {
+                    LOGGER.error("Failed to initialize NEI integration", e);
+                }
+            }
         }
     }
 

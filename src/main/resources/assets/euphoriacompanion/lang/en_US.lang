@@ -1,3 +1,5 @@
 # Keybindings
 key.categories.euphoriacompanion=Euphoria Companion
 key.euphoriacompanion.analyze=Analyze Shaderpacks
+key.euphoriacompanion.dumpnei=Capture NEI Items
+key.euphoriacompanion.dumpinventory=Capture Inventory Items
