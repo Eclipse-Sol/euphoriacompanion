@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class EuphoriaCompanion {
     public static final String MODID = "euphoriacompanion";
     public static final String NAME = "Euphoria Companion";
-    public static final String VERSION = "2.0.1";
+    public static final String VERSION = "2.0.2";
 
     public static final Logger LOGGER = LogManager.getLogger(MODID);
 
